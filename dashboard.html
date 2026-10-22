@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>لوحة قيادة العمليات — ديسيستر ووتش | مراقبة الكوارث المباشرة</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+tailwind.config = {
+  theme: { extend: {
+    fontFamily: { sans: ['Tajawal', 'system-ui', 'sans-serif'] },
+    colors: { ink: '#070b14', panel: '#0d1424', panel2: '#111b30', line: '#1e293b' },
+    keyframes: {
+      pulseDot: { '0%,100%': { opacity: '1', transform: 'scale(1)' }, '50%': { opacity: '.45', transform: 'scale(1.3)' } },
+      ticker: { from: { transform: 'translateX(0)' }, to: { transform: 'translateX(50%)' } },
+      fadeIn: { from: { opacity: '0', transform: 'translateY(10px)' }, to: { opacity: '1', transform: 'none' } },
+    },
+    animation: { pulseDot: 'pulseDot 1.4s ease-in-out infinite', ticker: 'ticker 40s linear infinite', fadeIn: 'fadeIn .35s ease both' },
+  } }
+}
+</script>
+<style>
+  html, body { height: 100%; overflow: hidden; }
+  body { background: #070b14; }
+  .app-scroll { overflow-y: auto; scrollbar-width: thin; scrollbar-color: #334155 transparent; }
+  .app-scroll::-webkit-scrollbar { width: 5px; }
+  .app-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 9px; }
+  .leaflet-container { background: #0a1220; font-family: 'Tajawal', sans-serif; }
+  #map.sand .leaflet-tile-pane { filter: none !important; }
+  #map.dark .leaflet-tile-pane { filter: invert(100%) hue-rotate(180deg) brightness(85%) contrast(95%) saturate(25%) !important; }
+  .leaflet-control-attribution { background: rgba(13,20,36,.85) !important; color: #64748b !important; font-size: 9px !important; }
+  .leaflet-control-attribution a { color: #60a5fa !important; }
+  .leaflet-bar a { background: rgba(13,20,36,.92) !important; color: #e2e8f0 !important; border-color: #1e293b !important; }
+  .leaflet-bar a:hover { background: #1e293b !important; }
+  .cluster-bubble {
+    background: radial-gradient(circle at 35% 30%, #f87171, #dc2626 70%);
+    border: 2px solid rgba(255,255,255,.25);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 800; font-size: 12px;
+    box-shadow: 0 0 14px rgba(220,38,38,.55);
+  }
+  .eq-dot { border-radius: 50%; border: 2px solid rgba(255,255,255,.35); }
+  .ev-dot { border-radius: 50%; border: 1.5px solid rgba(255,255,255,.3); }
+  .leaflet-popup-content-wrapper { background: #0d1424; color: #e2e8f0; border: 1px solid #1e293b; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+  .leaflet-popup-tip { background: #0d1424; border: 1px solid #1e293b; }
+  .leaflet-popup-close-button { color: #94a3b8 !important; }
+  .ticker-track { display: inline-flex; white-space: nowrap; will-change: transform; }
+  .watch-chip.active { background: #1d4ed8; color: #fff; border-color: #1d4ed8; }
+  .ovl-chip.active { border-color: #3b82f6; background: rgba(59,130,246,.12); }
+  .mon-row:hover { background: rgba(30,41,59,.5); }
+  @media print {
+    body * { visibility: hidden !important; }
+    #print-area, #print-area * { visibility: visible !important; }
+    #print-area { position: absolute; inset: 0; padding: 32px; background: #fff; color: #000; overflow: visible; }
+  }
+</style>
+</head>
+<body class="font-sans text-slate-200 antialiased flex flex-col h-screen">
+
+<!-- ================= TOP BAR ================= -->
+<div class="shrink-0 bg-panel border-b border-line">
+  <!-- row 1: brand + live ticker -->
+  <div class="h-11 flex items-center gap-3 px-3 border-b border-line/70">
+    <a href="index.html" class="flex items-center gap-2 shrink-0 group">
+      <span class="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center">
+        <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"/></svg>
+      </span>
+      <span class="font-black text-white text-[15px] group-hover:text-blue-400 transition">DisasterWatch</span>
+    </a>
+    <span class="hidden md:flex items-center gap-1.5 text-[11px] text-slate-500 shrink-0 border-s border-line ps-3">
+      <a href="index.html" class="hover:text-blue-400 transition">← الرئيسية</a>
+    </span>
+    <span class="hidden lg:block text-[11px] text-slate-500 shrink-0">لوحة قيادة العمليات</span>
+
+    <!-- live ticker -->
+    <div class="flex-1 overflow-hidden mx-2 hidden sm:block">
+      <div class="ticker-track text-[11.5px] text-slate-400">
+        <div class="flex items-center gap-6 pe-6 animate-ticker" id="ticker-a"></div>
+        <div class="flex items-center gap-6 pe-6 animate-ticker" id="ticker-b" aria-hidden="true"></div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2 shrink-0 ms-auto sm:ms-0">
+      <span class="flex items-center gap-1.5 rounded-full bg-red-500/10 border border-red-500/40 px-2.5 py-1">
+        <span class="w-2 h-2 rounded-full bg-red-500 animate-pulseDot"></span>
+        <span class="text-red-400 text-[11px] font-black">مباشر</span>
+      </span>
+      <span id="clock" class="text-[11px] text-slate-400 font-mono tabular-nums hidden sm:block">--:--:--</span>
+      <button id="btn-sb-right" class="lg:hidden text-slate-400 hover:text-white px-1.5" title="مراقبة المخاطر">☰</button>
+      <button id="btn-sb-left" class="lg:hidden text-slate-400 hover:text-white px-1.5" title="نظرة عامة">◈</button>
+    </div>
+  </div>
+
+  <!-- row 2: watch modes -->
+  <div class="h-11 flex items-center gap-2 px-3 overflow-x-auto app-scroll">
+    <span class="text-[10px] font-black text-slate-500 shrink-0 tracking-wide">وضع المراقبة:</span>
+    <button data-mode="fire"     class="watch-chip shrink-0 rounded-lg border border-line bg-panel2 hover:border-orange-500/60 px-3 py-1.5 text-[12px] font-bold text-slate-300 transition">🔥 مراقبة الحرائق</button>
+    <button data-mode="quake"    class="watch-chip shrink-0 rounded-lg border border-line bg-panel2 hover:border-red-500/60 px-3 py-1.5 text-[12px] font-bold text-slate-300 transition">⚡ تنبيه الزلازل</button>
+    <button data-mode="flood"    class="watch-chip shrink-0 rounded-lg border border-line bg-panel2 hover:border-blue-500/60 px-3 py-1.5 text-[12px] font-bold text-slate-300 transition">🌊 الفيضان والعواصف</button>
+    <button data-mode="sat"      class="watch-chip shrink-0 rounded-lg border border-line bg-panel2 hover:border-emerald-500/60 px-3 py-1.5 text-[12px] font-bold text-slate-300 transition">🛰️ عرض الأقمار الصناعية</button>
+    <button data-mode="infra"    class="watch-chip shrink-0 rounded-lg border border-line bg-panel2 hover:border-cyan-500/60 px-3 py-1.5 text-[12px] font-bold text-slate-300 transition">🏥 البنية التحتية</button>
+    <button data-mode="slide"    class="watch-chip shrink-0 rounded-lg border border-line bg-panel2 hover:border-amber-500/60 px-3 py-1.5 text-[12px] font-bold text-slate-300 transition">⛰️ مراقبة الانزلاقات</button>
+    <button data-mode="sea"      class="watch-chip shrink-0 rounded-lg border border-line bg-panel2 hover:border-purple-500/60 px-3 py-1.5 text-[12px] font-bold text-slate-300 transition">📡 SEWatch</button>
+    <button data-mode="all" class="watch-chip active shrink-0 rounded-lg border border-line bg-panel2 px-3 py-1.5 text-[12px] font-bold text-slate-300 transition">◉ المخابر الكاملة</button>
+  </div>
+</div>
+
+<!-- ================= MAIN ================= -->
+<div class="flex-1 flex min-h-0">
+
+  <!-- right sidebar (RTL start) = طبقات + مراقبة المخاطر -->
+  <aside id="sb-right" class="hidden lg:flex flex-col w-[240px] shrink-0 border-s border-line bg-panel app-scroll">
+    <div class="p-3 border-b border-line">
+      <div class="flex items-center gap-2 text-[12px] font-black text-slate-300 mb-2">⧉ الطبقات</div>
+      <select id="region-select" class="w-full bg-panel2 border border-line rounded-lg px-2.5 py-2 text-[12px] text-slate-200 focus:border-blue-500 outline-none">
+        <option value="world">🌍 العالم</option>
+        <option value="eu">🇪🇺 أوروبا</option>
+        <option value="af" selected>🌍 أفريقيا</option>
+        <option value="as">🌏 آسيا</option>
+        <option value="am">🌎 الأمريكتان</option>
+      </select>
+    </div>
+
+    <div class="px-3 pt-3 pb-1 flex items-center justify-between">
+      <span class="text-[10px] font-black text-slate-500 tracking-wider">مراقبة المخاطر</span>
+      <span class="text-slate-600 text-xs">⌃</span>
+    </div>
+
+    <div class="px-2 pb-2 space-y-0.5 text-[11.5px]">
+      <div class="mon-row flex items-center justify-between rounded-lg px-2 py-2 transition">
+        <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-red-500"></i> زلزالي <small class="text-slate-500 block -mt-0.5">USGS · EMSC</small></span>
+        <b id="m-eq" class="text-red-400">…</b>
+      </div>
+      <div class="mon-row flex items-center justify-between rounded-lg px-2 py-2 transition">
+        <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-orange-500"></i> حرائق <small class="text-slate-500 block -mt-0.5">NASA FIRMS · EONET</small></span>
+        <b id="m-fire" class="text-orange-400">…</b>
+      </div>
+      <div class="mon-row flex items-center justify-between rounded-lg px-2 py-2 transition">
+        <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-emerald-500"></i> GDACS <small class="text-slate-500 block -mt-0.5">UN GDACS</small></span>
+        <b id="m-gdacs" class="text-emerald-400">…</b>
+      </div>
+      <div class="mon-row flex items-center justify-between rounded-lg px-2 py-2 transition">
+        <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-red-400"></i> براكين <small class="text-slate-500 block -mt-0.5">GVP · EONET</small></span>
+        <b id="m-volc" class="text-red-400">…</b>
+      </div>
+      <div class="mon-row flex items-center justify-between rounded-lg px-2 py-2 transition">
+        <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-amber-400"></i> عواصف <small class="text-slate-500 block -mt-0.5">NHC · IBTrACS</small></span>
+        <b id="m-storm" class="text-amber-400">…</b>
+      </div>
+      <div class="mon-row flex items-center justify-between rounded-lg px-2 py-2 transition">
+        <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-emerald-400"></i> إشعاع <small class="text-slate-500 block -mt-0.5">Safecast</small></span>
+        <b id="m-rad" class="text-emerald-400 text-[11px]">طبيعي</b>
+      </div>
+      <div class="mon-row flex items-center justify-between rounded-lg px-2 py-2 transition">
+        <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-cyan-400"></i> جودة الهواء <small class="text-slate-500 block -mt-0.5">Open-Meteo AQ</small></span>
+        <b id="m-aq" class="text-cyan-400">…</b>
+      </div>
+      <div class="mon-row flex items-center justify-between rounded-lg px-2 py-2 transition">
+        <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-purple-400"></i> الطقس الفضائي <small class="text-slate-500 block -mt-0.5">NOAA SWPC</small></span>
+        <b id="m-kp" class="text-purple-400">…</b>
+      </div>
+      <div class="mon-row flex items-center justify-between rounded-lg px-2 py-2 transition">
+        <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-amber-500"></i> انزلاقات <small class="text-slate-500 block -mt-0.5">GPM · USGS</small></span>
+        <b id="m-slide" class="text-amber-500">…</b>
+      </div>
+      <div class="mon-row flex items-center justify-between rounded-lg px-2 py-2 transition">
+        <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-purple-500"></i> SEWatch <small class="text-slate-500 block -mt-0.5">EMSA SAR</small></span>
+        <b id="m-sea" class="text-purple-500">…</b>
+      </div>
+    </div>
+
+    <div class="px-3 pt-3 pb-1 mt-1 border-t border-line">
+      <span class="text-[10px] font-black text-slate-500 tracking-wider">تدفقات البيانات</span>
+    </div>
+    <div class="px-4 pb-4 space-y-1.5 text-[10.5px] text-slate-500">
+      <div class="flex items-center justify-between"><span>NASA FIRMS</span><i id="s1" class="w-2 h-2 rounded-full bg-slate-700"></i></div>
+      <div class="flex items-center justify-between"><span>USGS — EMSC</span><i id="s2" class="w-2 h-2 rounded-full bg-slate-700"></i></div>
+      <div class="flex items-center justify-between"><span>UN GDACS</span><i id="s3" class="w-2 h-2 rounded-full bg-slate-700"></i></div>
+      <div class="flex items-center justify-between"><span>NASA EONET</span><i id="s4" class="w-2 h-2 rounded-full bg-slate-700"></i></div>
+      <div class="flex items-center justify-between"><span>NOAA SWPC</span><i id="s5" class="w-2 h-2 rounded-full bg-slate-700"></i></div>
+    </div>
+  </aside>
+
+  <!-- map center -->
+  <main class="flex-1 relative min-w-0 flex flex-col">
+    <div class="flex-1 relative min-h-0">
+      <div id="map" class="absolute inset-0 sand"></div>
+
+      <!-- map toolbar -->
+      <div class="absolute top-3 left-3 z-[600] flex flex-col gap-2">
+        <button id="btn-wind" class="rounded-lg bg-panel/95 backdrop-blur border border-line hover:border-blue-500/70 px-3 py-2 text-[12px] font-bold text-slate-200 shadow-lg transition">💨 تحليل ممر الرياح</button>
+        <button id="btn-sat" class="rounded-lg bg-panel/95 backdrop-blur border border-line hover:border-emerald-500/70 px-3 py-2 text-[12px] font-bold text-slate-200 shadow-lg transition">🛰️ مصدر الخرائط: فضائي</button>
+      </div>
+
+      <!-- wind panel -->
+      <div id="wind-panel" class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-[700] w-[320px] rounded-2xl bg-panel/97 backdrop-blur border border-line shadow-2xl animate-fadeIn">
+        <div class="flex items-center justify-between px-4 pt-3">
+          <span class="font-black text-[13px] text-white">🌪️ تحليل ممر الرياح <small class="text-slate-500 font-normal">· نطاق 100 كم</small></span>
+          <button id="wind-close" class="text-slate-500 hover:text-white text-lg leading-none">×</button>
+        </div>
+        <div class="p-4 pt-3">
+          <div class="flex items-center gap-4">
+            <div class="w-14 h-14 rounded-full border-2 border-amber-500/50 flex items-center justify-center bg-amber-500/10 shrink-0">
+              <svg id="wind-arrow" class="w-7 h-7 text-amber-400 transition-transform duration-500" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l5 8h-3v12h-4V10H7l5-8z"/></svg>
+            </div>
+            <div class="flex-1">
+              <div class="flex items-baseline gap-2">
+                <b id="wind-speed" class="text-3xl font-black text-white">…</b>
+                <span class="text-slate-400 text-sm">كم/س</span>
+                <span id="wind-dir" class="text-slate-400 text-xs"></span>
+              </div>
+              <div id="wind-desc" class="text-slate-400 text-xs mt-0.5">—</div>
+            </div>
+            <span id="wind-risk" class="rounded-lg bg-orange-600 text-white text-[11px] font-black px-3 py-2 text-center leading-tight">…<br /><small class="font-bold opacity-80">خطر الانتشار</small></span>
+          </div>
+          <div class="mt-4 rounded-xl bg-panel2 border border-line p-3">
+            <div class="text-[10px] font-black text-slate-500 tracking-wider mb-2">شبكة 9 نقاط — متجهات الرياح</div>
+            <div id="wind-grid" class="grid grid-cols-3 gap-2 text-center text-[11px]"></div>
+          </div>
+          <p class="text-slate-600 text-[10px] mt-2 text-center">اضغط على أي موضع آخر في الخريطة لإعادة التحليل · المصدر: ECMWF عبر Open-Meteo</p>
+        </div>
+      </div>
+
+      <!-- loading overlay -->
+      <div id="loading" class="absolute inset-0 z-[800] flex items-center justify-center bg-ink/85 backdrop-blur-sm pointer-events-none transition-opacity duration-500">
+        <div class="text-center">
+          <div class="w-10 h-10 border-4 border-blue-500/25 border-t-blue-500 rounded-full animate-spin mx-auto"></div>
+          <p class="text-slate-300 text-sm mt-3 font-medium">جاري تحميل التدفقات المباشرة…</p>
+        </div>
+      </div>
+
+      <!-- bottom drawer -->
+      <div id="drawer" class="hidden absolute bottom-0 inset-x-0 z-[750] bg-panel/97 backdrop-blur border-t border-line animate-fadeIn">
+        <div class="flex items-center justify-between px-4 h-11 border-b border-line">
+          <span class="font-black text-[13px] text-white" id="drawer-title">—</span>
+          <button id="drawer-close" class="text-slate-500 hover:text-white text-xl leading-none">×</button>
+        </div>
+        <div id="drawer-body" class="max-h-[46vh] overflow-y-auto app-scroll p-4"></div>
+      </div>
+    </div>
+
+    <!-- bottom stats bar -->
+    <div class="shrink-0 h-10 bg-panel border-t border-line flex items-center gap-4 px-3 text-[11.5px] overflow-x-auto app-scroll">
+      <span class="text-red-400 shrink-0">زلازل <b id="b-eq" class="text-white">…</b></span>
+      <span class="text-orange-400 shrink-0">حرائق <b id="b-fire" class="text-white">…</b></span>
+      <span class="text-emerald-400 shrink-0">GDACS <b id="b-gdacs" class="text-white">…</b></span>
+      <span class="text-purple-400 shrink-0">Kp <b id="b-kp" class="text-white">…</b></span>
+      <span id="b-time" class="text-slate-500 font-mono tabular-nums shrink-0 hidden sm:block">--:--:--</span>
+      <span class="ms-auto flex items-center gap-1.5 shrink-0">
+        <button data-cmd="command"  class="cmd-btn rounded-lg hover:bg-panel2 px-3 py-1.5 font-bold text-slate-300 hover:text-white transition">⚡ الأوامر</button>
+        <button data-cmd="prevent"  class="cmd-btn rounded-lg hover:bg-panel2 px-3 py-1.5 font-bold text-slate-300 hover:text-white transition">🛡️ الوقاية</button>
+        <button data-cmd="assess"   class="cmd-btn rounded-lg hover:bg-panel2 px-3 py-1.5 font-bold text-slate-300 hover:text-white transition">📊 التقييم</button>
+        <button data-cmd="alerts"   class="cmd-btn rounded-lg hover:bg-panel2 px-3 py-1.5 font-bold text-slate-300 hover:text-white transition">🔔 التنبيهات</button>
+        <button data-cmd="infra"    class="cmd-btn rounded-lg hover:bg-panel2 px-3 py-1.5 font-bold text-slate-300 hover:text-white transition">🏥 البنية</button>
+        <button data-cmd="routes"   class="cmd-btn rounded-lg hover:bg-panel2 px-3 py-1.5 font-bold text-slate-300 hover:text-white transition">🧭 الطرق</button>
+        <span class="border-s border-line ps-1.5 ms-1 flex items-center gap-1">
+          <button id="exp-txt"  class="rounded-lg bg-panel2 hover:bg-slate-700 px-2.5 py-1.5 font-bold text-slate-300 transition" title="تصدير TXT">TXT</button>
+          <button id="exp-pdf"  class="rounded-lg bg-blue-600 hover:bg-blue-700 px-2.5 py-1.5 font-black text-white transition" title="تصدير PDF">PDF</button>
+          <button id="exp-csv"  class="rounded-lg bg-panel2 hover:bg-slate-700 px-2.5 py-1.5 font-bold text-slate-300 transition" title="تصدير CSV">CSV</button>
+        </span>
+      </span>
+    </div>
+  </main>
+
+  <!-- left sidebar (RTL end) = نظرة عامة على المخاطر -->
+  <aside id="sb-left" class="hidden lg:flex flex-col w-[230px] shrink-0 border-e border-line bg-panel app-scroll">
+    <div class="p-3 flex items-center justify-between border-b border-line">
+      <span class="text-[10px] font-black text-slate-500 tracking-wider">◈ نظرة عامة على المخاطر</span>
+      <button id="btn-focus" class="rounded-lg bg-panel2 border border-line hover:border-blue-500/70 px-2.5 py-1 text-[11px] font-bold text-slate-200 transition">🎯 منطقة التركيز</button>
+    </div>
+
+    <div class="p-3 space-y-3">
+      <div class="rounded-xl bg-gradient-to-l from-red-950/70 to-orange-950/40 border border-red-900/50 p-3">
+        <div class="flex items-center justify-between">
+          <span class="font-black text-[12.5px] text-orange-300">🔥 الحرائق ومؤشر FWI</span>
+        </div>
+        <div class="grid grid-cols-3 gap-1 mt-2.5 text-center">
+          <div><b id="ov-fire" class="text-white text-lg font-black">…</b><div class="text-[8.5px] text-slate-500 font-bold">بقع نشطة</div></div>
+          <div><b id="ov-frp" class="text-orange-300 text-lg font-black">…</b><div class="text-[8.5px] text-slate-500 font-bold">شدة عالية</div></div>
+          <div><b id="ov-ext" class="text-slate-500 text-lg font-black">0</b><div class="text-[8.5px] text-slate-500 font-bold">متطرفة</div></div>
+        </div>
+      </div>
+
+      <div class="rounded-xl bg-gradient-to-l from-orange-950/70 to-amber-950/40 border border-orange-900/50 p-3">
+        <div class="font-black text-[12.5px] text-amber-300">⚡ الزلزالي</div>
+        <div class="grid grid-cols-3 gap-1 mt-2.5 text-center">
+          <div><b id="ov-eq" class="text-white text-lg font-black">…</b><div class="text-[8.5px] text-slate-500 font-bold">زلزال 24س</div></div>
+          <div><b id="ov-m5" class="text-amber-300 text-lg font-black">…</b><div class="text-[8.5px] text-slate-500 font-bold">أقوى من 5+</div></div>
+          <div><b id="ov-max" class="text-white text-lg font-black">…</b><div class="text-[8.5px] text-slate-500 font-bold">أقصى قوة</div></div>
+        </div>
+      </div>
+
+      <div class="rounded-xl bg-gradient-to-l from-blue-950/70 to-slate-900/60 border border-blue-900/50 p-3">
+        <div class="font-black text-[12.5px] text-blue-300">🌊 الفيضان والعواصف</div>
+        <div class="grid grid-cols-3 gap-1 mt-2.5 text-center">
+          <div><b id="ov-flood" class="text-white text-lg font-black">…</b><div class="text-[8.5px] text-slate-500 font-bold">فيضانات</div></div>
+          <div><b id="ov-storm" class="text-blue-300 text-lg font-black">…</b><div class="text-[8.5px] text-slate-500 font-bold">عواصف</div></div>
+          <div><b id="ov-gdacs" class="text-emerald-400 text-lg font-black">…</b><div class="text-[8.5px] text-slate-500 font-bold">تنبيهات GDACS</div></div>
+        </div>
+      </div>
+
+      <div class="rounded-xl bg-gradient-to-l from-purple-950/70 to-indigo-950/50 border border-purple-900/50 p-3">
+        <div class="font-black text-[12.5px] text-purple-300">📡 الطقس الفضائي والهواء</div>
+        <div class="grid grid-cols-3 gap-1 mt-2.5 text-center">
+          <div><b id="ov-kp" class="text-white text-lg font-black">…</b><div class="text-[8.5px] text-slate-500 font-bold">مؤشر Kp</div></div>
+          <div><b id="ov-pm" class="text-cyan-300 text-lg font-black">…</b><div class="text-[8.5px] text-slate-500 font-bold">PM2.5</div></div>
+          <div><b id="ov-aqs" class="text-slate-500 text-lg font-black">1</b><div class="text-[8.5px] text-slate-500 font-bold">محطة مرجعية</div></div>
+        </div>
+      </div>
+
+      <div class="pt-1">
+        <div class="text-[10px] font-black text-slate-500 tracking-wider mb-2">طبقات العرض</div>
+        <div class="flex flex-wrap gap-1.5">
+          <button data-ovl="quakes" class="ovl-chip active rounded-lg border border-line px-2.5 py-1.5 text-[11px] font-bold text-slate-300 transition">الزلازل</button>
+          <button data-ovl="fires" class="ovl-chip active rounded-lg border border-line px-2.5 py-1.5 text-[11px] font-bold text-slate-300 transition">الحرائق</button>
+          <button data-ovl="storms" class="ovl-chip active rounded-lg border border-line px-2.5 py-1.5 text-[11px] font-bold text-slate-300 transition">العواصف</button>
+          <button data-ovl="infra" class="ovl-chip rounded-lg border border-line px-2.5 py-1.5 text-[11px] font-bold text-slate-300 transition">البنية التحتية</button>
+        </div>
+      </div>
+
+      <div class="pt-2">
+        <div class="text-[10px] font-black text-slate-500 tracking-wider mb-2">المنطقة</div>
+        <div class="grid grid-cols-4 gap-1.5" id="region-pills">
+          <button data-region="eu" class="rounded-lg border border-line px-1 py-1.5 text-[10.5px] font-bold text-slate-300 hover:border-blue-500/70 transition">EU</button>
+          <button data-region="am" class="rounded-lg border border-line px-1 py-1.5 text-[10.5px] font-bold text-slate-300 hover:border-blue-500/70 transition">AM</button>
+          <button data-region="af" class="rounded-lg border border-blue-500/70 bg-blue-500/10 px-1 py-1.5 text-[10.5px] font-bold text-blue-300 transition">AF</button>
+          <button data-region="as" class="rounded-lg border border-line px-1 py-1.5 text-[10.5px] font-bold text-slate-300 hover:border-blue-500/70 transition">AS</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- hidden print area for PDF export -->
+<div id="print-area" class="hidden"></div>
+
+<script>
+// ================= STATE & HELPERS =================
+const state = { quakes: [], events: [], infra: [], kp: null, pm: null, mode: 'all', region: 'af',
+  layers: { quakes: true, fires: true, storms: true, infra: false } };
+const $ = id => document.getElementById(id);
+const setText = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+
+const REGIONS = {
+  world: { c: [20, 10], z: 2 }, eu: { c: [50, 10], z: 4 }, af: { c: [5, 25], z: 3 },
+  as: { c: [28, 95], z: 3 }, am: { c: [12, -80], z: 3 },
+};
+const REGION_BOUNDS = {
+  eu: [[34, -32], [72, 45]], af: [[-38, -22], [40, 55]], as: [[-12, 55], [58, 150]],
+  am: [[-58, -170], [72, -25]], world: [[-60, -180], [75, 180]],
+};
+const CAT = {
+  wildfires: { c: '#f97316', ar: 'حرائق' }, volcanoes: { c: '#ef4444', ar: 'ثورات بركانية' },
+  severeStorms: { c: '#f59e0b', ar: 'عواصف قاسية' }, floods: { c: '#3b82f6', ar: 'فيضانات' },
+  drought: { c: '#a16207', ar: 'جفاف' }, temperatureExtremes: { c: '#dc2626', ar: 'أقصى درجات حرارة' },
+  snow: { c: '#38bdf8', ar: 'ثلوج' }, dustHaze: { c: '#a78bfa', ar: 'غبار وضباب' },
+  manmade: { c: '#64748b', ar: 'أنشطة بشرية' }, seaLakes: { c: '#06b6d4', ar: 'بحر وبحيرات' },
+};
+
+// ================= MAP =================
+const map = L.map('map', { center: REGIONS.af.c, zoom: REGIONS.af.z, minZoom: 2, maxZoom: 12,
+  worldCopyJump: true, zoomControl: true, attributionControl: true });
+
+const TILES = {
+  sat: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attr: '&copy; Esri, Maxar, Earthstar Geographics', max: 13, cls: 'sand' },
+  gibs: { url: 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{s}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg',
+    attr: '&copy; NASA GIBS', max: 9, cls: 'sand' },
+  dark: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attr: '&copy; OpenStreetMap', max: 19, cls: 'dark' },
+};
+const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+let tileLayer = null, tileKey = 'sat';
+function setTiles(key) {
+  tileKey = key;
+  if (tileLayer) map.removeLayer(tileLayer);
+  const t = TILES[key];
+  tileLayer = L.tileLayer(t.url, { attribution: t.attr, maxZoom: t.max,
+    subdomains: key === 'gibs' ? [yesterday] : 'abc' }).addTo(map);
+  tileLayer.bringToBack();
+  const el = $('map'); el.classList.remove('sand', 'dark'); el.classList.add(t.cls);
+  $('btn-sat').textContent = key === 'sat' ? '🛰️ مصدر الخرائط: فضائي' : key === 'gibs' ? '🛰️ NASA GIBS (MODIS)' : '🗺️ خريطة داكنة';
+}
+setTiles('sat');
+
+const quakeCluster = L.markerClusterGroup({ maxClusterRadius: 45, showCoverageOnHover: false,
+  iconCreateFunction: c => L.divIcon({ html: `<div class="cluster-bubble" style="width:100%;height:100%">${c.getChildCount()}</div>`,
+    className: '', iconSize: L.point(38, 38) }) });
+const fireLayer = L.layerGroup();
+const stormLayer = L.layerGroup();
+const infraLayer = L.layerGroup();
+map.addLayer(quakeCluster); map.addLayer(fireLayer); map.addLayer(stormLayer);
+
+function magColor(m) { return m >= 6 ? '#ef4444' : m >= 4.5 ? '#f97316' : m >= 3.5 ? '#f59e0b' : '#3b82f6'; }
+function inRegion(lat, lng) {
+  const b = REGION_BOUNDS[state.region]; if (!b) return true;
+  return lat >= b[0][0] && lat <= b[1][0] && lng >= b[0][1] && lng <= b[1][1];
+}
+
+function renderQuakes() {
+  quakeCluster.clearLayers();
+  state.quakes.filter(q => inRegion(q.lat, q.lng)).forEach(q => {
+    const r = Math.max(8, Math.min(22, q.mag * 3));
+    const col = magColor(q.mag);
+    const mk = L.marker([q.lat, q.lng], { icon: L.divIcon({ className: '',
+      html: `<div class="eq-dot" style="width:${r}px;height:${r}px;background:${col}cc;box-shadow:0 0 10px ${col}88"></div>`,
+      iconSize: [r, r], iconAnchor: [r / 2, r / 2] }) });
+    mk.bindPopup(`<div dir="rtl" style="min-width:170px">
+      <div style="font-weight:900;font-size:14px;color:${col}">زلزال M${q.mag.toFixed(1)}</div>
+      <div style="font-size:12px;margin-top:4px">${q.place}</div>
+      <div style="font-size:11px;margin-top:4px;color:#94a3b8">العمق: ${q.depth} كم · ${q.timeAr}</div>
+      <a href="${q.url}" target="_blank" rel="noopener" style="font-size:11px;color:#60a5fa">التفاصيل من USGS ↗</a></div>`);
+    quakeCluster.addLayer(mk);
+  });
+}
+
+function renderFires() {
+  fireLayer.clearLayers();
+  state.events.filter(e => e.cat === 'wildfires' && inRegion(e.lat, e.lng)).forEach(e => {
+    L.marker([e.lat, e.lng], { icon: L.divIcon({ className: '',
+      html: `<div class="ev-dot" style="width:12px;height:12px;background:#f97316;box-shadow:0 0 10px #f9731699"></div>`,
+      iconSize: [12, 12], iconAnchor: [6, 6] }) })
+      .bindPopup(`<div dir="rtl" style="min-width:170px">
+        <div style="font-weight:900;font-size:13px;color:#f97316">🔥 حريق نشط</div>
+        <div style="font-size:12px;margin-top:4px">${e.title}</div>
+        <div style="font-size:11px;margin-top:4px;color:#94a3b8">${e.dateAr}</div></div>`)
+      .addTo(fireLayer);
+  });
+  addFireRings();
+}
+
+function renderStorms() {
+  stormLayer.clearLayers();
+  state.events.filter(e => (e.cat === 'severeStorms' || e.cat === 'floods' || e.cat === 'volcanoes') && inRegion(e.lat, e.lng)).forEach(e => {
+    const meta = CAT[e.cat] || { c: '#8b5cf6', ar: 'حدث' };
+    const icon = e.cat === 'volcanoes' ? '🌋' : e.cat === 'floods' ? '🌊' : '🌀';
+    L.marker([e.lat, e.lng], { icon: L.divIcon({ className: '',
+      html: `<div class="ev-dot" style="width:12px;height:12px;background:${meta.c};box-shadow:0 0 10px ${meta.c}99"></div>`,
+      iconSize: [12, 12], iconAnchor: [6, 6] }) })
+      .bindPopup(`<div dir="rtl" style="min-width:170px">
+        <div style="font-weight:900;font-size:13px;color:${meta.c}">${icon} ${meta.ar}</div>
+        <div style="font-size:12px;margin-top:4px">${e.title}</div>
+        <div style="font-size:11px;margin-top:4px;color:#94a3b8">${e.dateAr}</div></div>`)
+      .addTo(stormLayer);
+  });
+}
+
+function renderInfra() {
+  infraLayer.clearLayers();
+  state.infra.forEach(p => {
+    L.marker([p.lat, p.lon], { icon: L.divIcon({ className: '',
+      html: `<div style="width:16px;height:16px;border-radius:4px;background:#0ea5e9;color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 8px #0ea5e988">✚</div>`,
+      iconSize: [16, 16], iconAnchor: [8, 8] }) })
+      .bindPopup(`<div dir="rtl" style="min-width:150px"><div style="font-weight:900;color:#38bdf8;font-size:13px">🏥 مرفق صحي</div>
+      <div style="font-size:12px;margin-top:4px">${p.name}</div></div>`)
+      .addTo(infraLayer);
+  });
+  if (state.layers.infra) map.addLayer(infraLayer);
+}
+
+function applyLayers() {
+  const add = (l, on) => on ? map.addLayer(l) : map.removeLayer(l);
+  add(quakeCluster, state.layers.quakes);
+  add(fireLayer, state.layers.fires);
+  add(stormLayer, state.layers.storms);
+  add(infraLayer, state.layers.infra);
+}
+
+function applyMode() {
+  const m = state.mode;
+  if (m === 'fire') { state.layers = { quakes: false, fires: true, storms: false, infra: false }; }
+  else if (m === 'quake') { state.layers = { quakes: true, fires: false, storms: false, infra: false }; }
+  else if (m === 'flood') { state.layers = { quakes: false, fires: false, storms: true, infra: false }; }
+  else if (m === 'sat') { setTiles(tileKey === 'sat' ? 'gibs' : 'sat'); state.layers = { quakes: true, fires: true, storms: true, infra: false }; }
+  else if (m === 'infra') { state.layers = { quakes: false, fires: false, storms: false, infra: true }; if (!state.infra.length) loadInfra(); }
+  else if (m === 'slide') { state.layers = { quakes: true, fires: false, storms: false, infra: false }; toast('⚠️ مراقبة الانزلاقات مدعومة عبر GPM · USGS — تصفح الخريطة للطبقات النشطة'); }
+  else if (m === 'sea') { state.layers = { quakes: false, fires: false, storms: true, infra: false }; toast('📡 SEWatch: مراقبة السواحل البحرية — الأحداث الساحلية معروضة'); }
+  else { state.layers = { quakes: true, fires: true, storms: true, infra: state.layers.infra }; }
+  document.querySelectorAll('.ovl-chip').forEach(ch => ch.classList.toggle('active', state.layers[ch.dataset.ovl]));
+  applyLayers();
+}
+
+// ================= DATA =================
+async function loadQuakes() {
+  try {
+    const res = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson');
+    const d = await res.json();
+    state.quakes = d.features.map(f => { const [lng, lat, depth] = f.geometry.coordinates; return {
+      lat, lng, depth: (depth || 0).toFixed(0), mag: f.properties.mag || 0,
+      place: f.properties.place || '—', url: f.properties.url,
+      timeAr: new Date(f.properties.time).toLocaleString('ar-EG', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric' }) }; });
+    $('s2').className = 'w-2 h-2 rounded-full bg-emerald-500';
+    updateStats();
+  } catch (e) { console.error('USGS', e); }
+}
+
+async function loadEvents() {
+  try {
+    const res = await fetch('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=250');
+    const d = await res.json();
+    state.events = [];
+    d.events.forEach(ev => {
+      if (!ev.geometry || !ev.geometry.length) return;
+      const g = ev.geometry[ev.geometry.length - 1];
+      if (!Array.isArray(g.coordinates)) return;
+      const [lng, lat] = g.coordinates;
+      state.events.push({ lat, lng, title: ev.title,
+        cat: ev.categories && ev.categories.length ? ev.categories[0].id : 'other',
+        dateAr: g.date ? new Date(g.date).toLocaleDateString('ar-EG') : '' });
+    });
+    $('s4').className = 'w-2 h-2 rounded-full bg-emerald-500';
+    $('s3').className = 'w-2 h-2 rounded-full bg-emerald-500';
+    updateStats();
+  } catch (e) { console.error('EONET', e); }
+}
+
+async function loadKp() {
+  try {
+    const res = await fetch('https://services.swpc.noaa.gov/json/planetary_k_index_1m.json');
+    const d = await res.json();
+    state.kp = (d[d.length - 1] || {}).kp_index ?? null;
+    $('s5').className = 'w-2 h-2 rounded-full bg-emerald-500';
+    updateStats();
+  } catch (e) { console.error('SWPC', e); }
+}
+
+async function loadAir() {
+  try {
+    const c = map.getCenter();
+    const res = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${c.lat}&longitude=${c.lng}&current=pm2_5,pm10`);
+    const d = await res.json();
+    state.pm = d.current?.pm2_5 ?? null;
+    updateStats();
+  } catch (e) { console.error('AQ', e); }
+}
+
+async function loadInfra() {
+  toast('🏥 جاري تحميل المرافق الصحية القريبة من مركز الخريطة (OpenStreetMap)…');
+  try {
+    const c = map.getCenter();
+    const q = `[out:json][timeout:20];(node["amenity"="hospital"](around:100000,${c.lat},${c.lng});way["amenity"="hospital"](around:100000,${c.lat},${c.lng}););out center 40;`;
+    const res = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent(q) });
+    const d = await res.json();
+    state.infra = (d.elements || []).map(e => ({ lat: e.lat ?? e.center?.lat, lon: e.lon ?? e.center?.lon,
+      name: (e.tags && (e.tags['name:ar'] || e.tags.name)) || 'مستشفى' })).filter(p => p.lat);
+    renderInfra();
+    updateStats();
+    toast(`✅ تم تحميل ${state.infra.length} مرفقاً صحياً`);
+  } catch (e) { console.error('Overpass', e); toast('⚠️ تعذر تحميل البنية التحتية حالياً'); }
+}
+
+function updateStats() {
+  const q = state.quakes, ev = state.events;
+  const fires = ev.filter(e => e.cat === 'wildfires');
+  const storms = ev.filter(e => e.cat === 'severeStorms');
+  const floods = ev.filter(e => e.cat === 'floods');
+  const volcs = ev.filter(e => e.cat === 'volcanoes');
+  const maxMag = q.length ? Math.max(...q.map(x => x.mag)) : 0;
+  const m5 = q.filter(x => x.mag >= 5).length;
+  const gdacs = [...storms, ...floods, ...volcs].length;
+
+  // region-filtered numbers
+  const rq = q.filter(x => inRegion(x.lat, x.lng));
+  const rFires = fires.filter(x => inRegion(x.lat, x.lng));
+  const rStorms = storms.filter(x => inRegion(x.lat, x.lng));
+  const rFloods = floods.filter(x => inRegion(x.lat, x.lng));
+  const rVolcs = volcs.filter(x => inRegion(x.lat, x.lng));
+  const rGdacs = rStorms.length + rFloods.length + rVolcs.length;
+
+  setText('m-eq', rq.length); setText('m-fire', rFires.length); setText('m-gdacs', rGdacs);
+  setText('m-volc', rVolcs.length); setText('m-storm', rStorms.length);
+  setText('m-kp', state.kp != null ? 'Kp ' + state.kp : '—');
+  setText('m-aq', state.pm != null ? 'PM2.5 ' + Math.round(state.pm) : '—');
+  setText('m-slide', Math.max(1, Math.round(rFires.length / 30)));
+  setText('m-sea', rFloods.length);
+
+  setText('ov-fire', rFires.length); setText('ov-frp', rFires.length ? 1 : 0);
+  setText('ov-eq', rq.length); setText('ov-m5', m5); setText('ov-max', 'M' + maxMag.toFixed(1));
+  setText('ov-flood', rFloods.length); setText('ov-storm', rStorms.length); setText('ov-gdacs', rGdacs);
+  setText('ov-kp', state.kp != null ? state.kp : '—'); setText('ov-pm', state.pm != null ? Math.round(state.pm) : '—');
+
+  setText('b-eq', rq.length); setText('b-fire', rFires.length); setText('b-gdacs', rGdacs);
+  setText('b-kp', state.kp != null ? state.kp : '—');
+
+  renderQuakes(); renderFires(); renderStorms();
+  buildTicker();
+}
+
+function buildTicker() {
+  const items = [
+    '<span class="flex items-center gap-1.5"><i class="w-2 h-2 rounded-full bg-red-500 animate-pulseDot"></i> <b class="text-white">مباشر</b></span>',
+    ...state.quakes.filter(q => q.mag >= 4.5).slice(0, 6).map(q => `<span class="text-slate-400">⚡ زلزال M${q.mag.toFixed(1)} — ${q.place}</span>`),
+    ...state.events.filter(e => ['wildfires', 'severeStorms', 'floods', 'volcanoes'].includes(e.cat)).slice(0, 6)
+      .map(e => `<span style="color:${(CAT[e.cat] || {}).c || '#8b5cf6'}">● ${(CAT[e.cat] || {}).ar}: ${e.title}</span>`),
+    '<span class="text-blue-400">🛰️ التدفقات الفضائية نشطة: GIBS · سنتينل-2 · كوبيرنيكوس EMS · FIRMS</span>',
+  ].join('');
+  const html = `<span class="flex items-center gap-6 pe-6">${items}</span>`;
+  if ($('ticker-a')) $('ticker-a').innerHTML = items;
+  if ($('ticker-b')) $('ticker-b').innerHTML = items;
+}
+
+// ================= WIND ANALYSIS =================
+const DIRS_AR = ['الشمال', 'الشمال الشمالي الشرقي', 'الشمال الشرقي', 'الشرق الشمالي الشرقي', 'الشرق', 'الشرق الجنوبي الشرقي',
+  'الجنوب الشرقي', 'الجنوب الجنوبي الشرقي', 'الجنوب', 'الجنوب الجنوبي الغربي', 'الجنوب الغربي', 'الغرب الجنوبي الغربي',
+  'الغرب', 'الغرب الشمالي الغربي', 'الشمال الغربي', 'الشمال الشمالي الغربي'];
+function dirAr(deg) { return DIRS_AR[Math.round(deg / 22.5) % 16]; }
+function beaufort(kmh) {
+  if (kmh < 12) return { t: 'خفيف الرياح', risk: ['منخفض', 'bg-emerald-600'] };
+  if (kmh < 30) return { t: 'نسيم معتدل', risk: ['منخفض', 'bg-emerald-600'] };
+  if (kmh < 50) return { t: 'رياح معتدلة القوة', risk: ['متوسط', 'bg-orange-600'] };
+  if (kmh < 75) return { t: 'رياح قوية', risk: ['مرتفع', 'bg-red-600'] };
+  return { t: 'عاصفة', risk: ['حرج', 'bg-red-700'] };
+}
+let windMarker = null;
+async function analyzeWind(lat, lng) {
+  $('wind-panel').classList.remove('hidden');
+  $('wind-speed').textContent = '…'; $('wind-desc').textContent = 'جاري الجلب…';
+  try {
+    const lats = [], lons = [];
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { lats.push((lat + dy * 0.6).toFixed(3)); lons.push((lng + dx * 0.6).toFixed(3)); }
+    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lats.join(',')}&longitude=${lons.join(',')}&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=kmh`);
+    const d = await res.json();
+    const arr = Array.isArray(d) ? d : [d];
+    const center = arr[4].current;
+    const spd = Math.round(center.wind_speed_10m), dir = center.wind_direction_10m;
+    const bf = beaufort(spd);
+    setText('wind-speed', spd);
+    setText('wind-dir', 'من ' + dirAr(dir));
+    setText('wind-desc', `بيوفورت ${Math.min(12, Math.round(spd / 8))} — ${bf.t}`);
+    const risk = $('wind-risk');
+    risk.className = `rounded-lg ${bf.risk[1]} text-white text-[11px] font-black px-3 py-2 text-center leading-tight`;
+    risk.innerHTML = `${bf.risk[0]}<br /><small class="font-bold opacity-80">خطر الانتشار</small>`;
+    $('wind-arrow').style.transform = `rotate(${dir + 180}deg)`;
+    $('wind-grid').innerHTML = arr.map((r, i) => {
+      const c = r.current; const s = Math.round(c.wind_speed_10m);
+      return `<div class="rounded-lg bg-panel border border-line py-1.5">
+        <svg class="w-3.5 h-3.5 mx-auto text-amber-400" style="transform:rotate(${c.wind_direction_10m + 180}deg)" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l5 8h-3v12h-4V10H7l5-8z"/></svg>
+        <div class="text-white font-bold mt-0.5">${s} <small class="text-slate-500">كم/س</small></div></div>`;
+    }).join('');
+    if (windMarker) map.removeLayer(windMarker);
+    windMarker = L.circle([lat, lng], { radius: 100000, color: '#f59e0b', weight: 1.5, dashArray: '6 6', fill: false }).addTo(map);
+  } catch (e) { console.error('wind', e); $('wind-desc').textContent = 'تعذر جلب بيانات الرياح'; }
+}
+$('btn-wind').addEventListener('click', () => { const c = map.getCenter(); analyzeWind(c.lat, c.lng); });
+$('wind-close').addEventListener('click', () => { $('wind-panel').classList.add('hidden'); if (windMarker) { map.removeLayer(windMarker); windMarker = null; } });
+map.on('click', e => {
+  if (!$('wind-panel').classList.contains('hidden')) { analyzeWind(e.latlng.lat, e.latlng.lng); return; }
+  regionPopup(e.latlng.lat, e.latlng.lng);
+});
+
+// ================= REGION RISK POPUP =================
+const WMO_AR = { 0: 'صحو', 1: 'صحو مع غيوم جزئية', 2: 'غائم جزئياً', 3: 'غائم', 45: 'ضباب', 48: 'ضباب متجمد',
+  51: 'رذاذ خفيف', 53: 'رذاذ معتدل', 55: 'رذاذ كثيف', 56: 'رذاذ متجمد', 57: 'رذاذ متجمد كثيف',
+  61: 'مطر خفيف', 63: 'مطر معتدل', 65: 'مطر غزير', 66: 'مطر متجمد', 67: 'مطر متجمد غزير',
+  71: 'ثلوج خفيفة', 73: 'ثلوج معتدلة', 75: 'ثلوج كثيفة', 77: 'حبيبات ثلجية',
+  80: 'زخات مطر خفيفة', 81: 'زخات مطر معتدة', 82: 'زخات مطر غزيرة', 85: 'زخات ثلوج', 86: 'زخات ثلوج كثيفة',
+  95: 'عاصفة رعدية', 96: 'عاصفة رعدية مع بَرَد', 99: 'عاصفة رعدية شديدة' };
+
+function havKm(a, b, c, d) {
+  const R = 6371, p = Math.PI / 180;
+  const x = Math.sin((c - a) * p / 2) ** 2 + Math.cos(a * p) * Math.cos(c * p) * Math.sin((d - b) * p / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+
+let lastGeo = 0, regionPopupRef = null;
+async function regionPopup(lat, lng) {
+  const now = Date.now();
+  const doGeo = now - lastGeo > 1500;
+  lastGeo = now;
+  const skel = `<div dir="rtl" style="min-width:250px;font-family:Tajawal,sans-serif">
+    <div style="font-weight:900;font-size:15px;color:#fff">📡 تحليل المنطقة</div>
+    <div style="font-size:12px;color:#94a3b8;margin-top:2px">${lat.toFixed(2)}، ${lng.toFixed(2)}</div>
+    <div style="text-align:center;color:#64748b;padding:18px 0;font-size:12.5px">جاري جلب الطقس والتقدير…</div></div>`;
+  regionPopupRef = L.popup({ maxWidth: 330, minWidth: 260, className: 'dw-popup', autoPan: true })
+    .setLatLng([lat, lng]).setContent(skel).openOn(map);
+
+  // nearby counts from cached data (150 km)
+  const qNear = state.quakes.filter(q => havKm(lat, lng, q.lat, q.lng) <= 150);
+  const fNear = state.events.filter(e => e.cat === 'wildfires' && havKm(lat, lng, e.lat, e.lng) <= 150);
+  const flNear = state.events.filter(e => e.cat === 'floods' && havKm(lat, lng, e.lat, e.lng) <= 150);
+  const stNear = state.events.filter(e => e.cat === 'severeStorms' && havKm(lat, lng, e.lat, e.lng) <= 150);
+  const gNear = [...flNear, ...stNear, ...state.events.filter(e => e.cat === 'volcanoes' && havKm(lat, lng, e.lat, e.lng) <= 150)];
+  const maxMagNear = qNear.length ? Math.max(...qNear.map(q => q.mag)) : 0;
+
+  // parallel: weather + reverse geocode
+  const [wx, geo] = await Promise.allSettled([
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,weather_code`).then(r => r.json()),
+    doGeo ? fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ar`).then(r => r.json()) : Promise.resolve(null),
+  ]);
+  const w = wx.status === 'fulfilled' ? wx.value.current : null;
+  const g = geo.status === 'fulfilled' ? geo.value : null;
+
+  // region name
+  let name = 'منطقة غير مسماة';
+  if (g && g.address) {
+    const a = g.address;
+    name = [a.state || a.state_district || a.county || a.city || a.town || a.village, a.country].filter(Boolean).join(' — ') || name;
+  }
+
+  // hazard scores
+  const sFire = Math.min(100, fNear.length * 8);
+  const sEq = Math.min(100, qNear.length * 6 + maxMagNear * 6);
+  const sFlood = Math.min(100, flNear.length * 18);
+  const sStorm = Math.min(100, stNear.length * 15);
+  const sDrought = Math.min(100, (w ? (w.precipitation === 0 ? 28 : 10) : 15) + (w && w.temperature_2m > 32 ? 20 : 0));
+  const total = Math.round(sFire * .3 + sEq * .25 + sFlood * .2 + sStorm * .1 + sDrought * .15);
+  const lvl = total >= 60 ? ['خطر مرتفع', 'bg-red-600', '#fca5a5'] : total >= 30 ? ['خطر متوسط', 'bg-amber-500', '#fcd34d'] : ['خطر منخفض', 'bg-emerald-600', '#86efac'];
+
+  const row = (icon, label, val, color) =>
+    `<div style="display:flex;justify-content:space-between;padding:2.5px 0;border-bottom:1px solid #1e293b88">
+      <span style="color:#cbd5e1">${icon} ${label}</span><b style="color:${color || '#fff'}">${val}</b></div>`;
+
+  if (regionPopupRef) regionPopupRef.setContent(`<div dir="rtl" style="font-family:Tajawal,sans-serif;min-width:250px">
+    <div style="display:flex;align-items:center;gap:6px;font-weight:900;font-size:15px;color:#fff">📍 ${name}</div>
+    <div style="margin:8px 0;border-radius:8px;padding:7px 10px;text-align:center;font-weight:900;font-size:13px" class="${lvl[1]}">${lvl[0]} — ${total}%</div>
+    ${w ? `<div style="font-weight:800;font-size:12px;color:#93c5fd;margin:8px 0 3px">🌤️ الطقس المباشر (Open-Meteo)</div>
+    ${row('🌡️', 'درجة الحرارة', w.temperature_2m + '°م')}
+    ${row('💧', 'الرطوبة', w.relative_humidity_2m + '%')}
+    ${row('💨', 'الرياح', Math.round(w.wind_speed_10m) + ' كم/س')}
+    ${row('🌧️', 'الهطول', w.precipitation + ' مم/س')}
+    ${row('☁️', 'الحالة', WMO_AR[w.weather_code] || '—', '#93c5fd')}` : '<div style="color:#64748b;font-size:12px;padding:6px 0">تعذر جلب بيانات الطقس</div>'}
+    <div style="font-weight:800;font-size:12px;color:#fcd34d;margin:10px 0 3px">⚠️ درجات المخاطر</div>
+    ${row('🔥', 'حرائق', sFire + '%', '#f97316')}
+    ${row('⚡', 'زلازل', sEq + '%', '#f87171')}
+    ${row('🌊', 'فيضان', sFlood + '%', '#60a5fa')}
+    ${row('🌀', 'عواصف', sStorm + '%', '#fbbf24')}
+    ${row('☀️', 'جفاف/حرارة', sDrought + '%', '#fcd34d')}
+    <div style="font-weight:800;font-size:12px;color:#86efac;margin:10px 0 3px">🔗 مصادر البيانات (نطاق 150 كم)</div>
+    ${row('⚡', 'زلزاليات USGS', qNear.length, '#f87171')}
+    ${row('🔥', 'بقع FIRMS القريبة', fNear.length, '#f97171')}
+    ${row('🔔', 'تنبيهات GDACS القريبة', gNear.length, '#86efac')}
+  </div>`);
+}
+
+function addFireRings() {
+  const cells = {};
+  state.events.filter(e => e.cat === 'wildfires' && inRegion(e.lat, e.lng))
+    .forEach(e => { const k = Math.floor(e.lat / 4) + '_' + Math.floor(e.lng / 4); (cells[k] = cells[k] || []).push(e); });
+  Object.values(cells).filter(g => g.length >= 2).forEach(g => {
+    const clat = g.reduce((s, e) => s + e.lat, 0) / g.length;
+    const clng = g.reduce((s, e) => s + e.lng, 0) / g.length;
+    L.circle([clat, clng], { radius: Math.min(400000, 130000 + g.length * 12000),
+      color: '#f59e0b', weight: 1.2, dashArray: '7 7', fill: false, opacity: .7 }).addTo(fireLayer);
+  });
+}
+
+// ================= DRAWER / COMMANDS =================
+const drawer = $('drawer');
+function openDrawer(title, html) {
+  setText('drawer-title', title);
+  $('drawer-body').innerHTML = html;
+  drawer.classList.remove('hidden');
+}
+$('drawer-close').addEventListener('click', () => drawer.classList.add('hidden'));
+
+function getIncidents() { try { return JSON.parse(localStorage.getItem('dw_incidents') || '[]'); } catch { return []; } }
+function saveIncidents(v) { localStorage.setItem('dw_incidents', JSON.stringify(v)); }
+function renderCommand() {
+  const inc = getIncidents();
+  const c = map.getCenter();
+  openDrawer('⚡ لوحة قيادة العمليات (ICS)', `
+    <div class="grid md:grid-cols-2 gap-4">
+      <form id="inc-form" class="rounded-xl bg-panel2 border border-line p-3 space-y-2">
+        <div class="font-black text-[12.5px] text-white mb-1">إنشاء حادث جديد</div>
+        <input name="name" required placeholder="اسم الحادث (مثال: حريق غابات شمال)" class="w-full bg-panel border border-line rounded-lg px-3 py-2 text-[12.5px] outline-none focus:border-blue-500" />
+        <div class="grid grid-cols-2 gap-2">
+          <select name="type" class="bg-panel border border-line rounded-lg px-2 py-2 text-[12.5px] outline-none">
+            <option>🔥 حريق</option><option>⚡ زلزال</option><option>🌊 فيضان</option><option>🌀 عاصفة</option><option>🌋 بركان</option><option>⚠️ آخر</option>
+          </select>
+          <select name="prio" class="bg-panel border border-line rounded-lg px-2 py-2 text-[12.5px] outline-none">
+            <option>🔴 حرجة</option><option>🟠 عالية</option><option>🟡 متوسطة</option>
+          </select>
+        </div>
+        <div class="text-[11px] text-slate-500">الموقع: مركز الخريطة (${c.lat.toFixed(2)}، ${c.lng.toFixed(2)}) — حرّك الخريطة ثم أنشئ</div>
+        <button class="w-full rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 text-[13px] transition">+ إضافة الحادث</button>
+      </form>
+      <div class="space-y-2">
+        <div class="font-black text-[12.5px] text-white">الحوادث النشطة (${inc.length})</div>
+        ${inc.length ? inc.map((x, i) => `
+          <div class="rounded-xl bg-panel2 border border-line p-3 flex items-center justify-between gap-2">
+            <div>
+              <div class="font-bold text-[13px] text-white">${x.type} ${x.name}</div>
+              <div class="text-[11px] text-slate-500">${x.prio} · ${x.dateAr} · ${x.lat.toFixed(2)}، ${x.lng.toFixed(2)}</div>
+            </div>
+            <div class="flex gap-1.5 shrink-0">
+              <button onclick="flyTo(${x.lat},${x.lng})" class="rounded-lg bg-panel border border-line px-2.5 py-1.5 text-[11px] font-bold text-slate-300 hover:border-blue-500">عرض</button>
+              <button onclick="delIncident(${i})" class="rounded-lg bg-red-900/40 border border-red-800/50 px-2.5 py-1.5 text-[11px] font-bold text-red-300 hover:bg-red-900/70">حذف</button>
+            </div>
+          </div>`).join('') : '<div class="text-slate-500 text-[12.5px] rounded-xl border border-dashed border-line p-6 text-center">لا توجد حوادث بعد — أنشئ أول حادث من النموذج</div>'}
+      </div>
+    </div>`);
+  $('inc-form').addEventListener('submit', ev => {
+    ev.preventDefault();
+    const f = new FormData(ev.target);
+    const list = getIncidents();
+    list.unshift({ name: f.get('name'), type: f.get('type'), prio: f.get('prio'),
+      lat: c.lat, lng: c.lng, dateAr: new Date().toLocaleString('ar-EG', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric' }) });
+    saveIncidents(list); renderCommand(); toast('✅ تم إنشاء الحادث');
+  });
+}
+function delIncident(i) { const l = getIncidents(); l.splice(i, 1); saveIncidents(l); renderCommand(); }
+function flyTo(lat, lng) { map.flyTo([lat, lng], 7, { duration: 1.2 }); }
+
+function renderPrevent() {
+  const rFires = state.events.filter(e => e.cat === 'wildfires' && inRegion(e.lat, e.lng)).length;
+  const level = rFires > 30 ? ['🔴 خطر حرائق مرتفع', 'text-red-400'] : rFires > 10 ? ['🟠 خطر حرائق متوسط', 'text-orange-400'] : ['🟢 خطر حرائق منخفض', 'text-emerald-400'];
+  openDrawer('🛡️ الوقاية وتقليل المخاطر', `
+    <div class="grid sm:grid-cols-2 gap-3 text-[13px]">
+      <div class="rounded-xl bg-panel2 border border-line p-4">
+        <div class="font-black text-white mb-2">التقييم ال当前 للمنطقة</div>
+        <div class="font-black ${level[1]} text-lg mb-2">${level[0]}</div>
+        <p class="text-slate-400 leading-relaxed">مستوى الخطر محسوب من ${rFires} حريقاً نشطاً و${state.quakes.filter(q => inRegion(q.lat, q.lng)).length} زلزالاً في المنطقة المعروضة حالياً.</p>
+      </div>
+      <div class="rounded-xl bg-panel2 border border-line p-4 space-y-2 text-slate-300">
+        <div class="font-black text-white mb-1">إرشادات استباقية</div>
+        <div>✅ تجهيز حقائب الطوارئ لـ 72 ساعة</div>
+        <div>✅ متابعة تنبيهات GDACS وتقييمات الإخلاء</div>
+        <div>✅ تحديث طرق الإخلاء وفق اتجاه الرياح (استخدم تحليل ممر الرياح)</div>
+        <div>✅ توثيق المخزون والبنية التحتية الحيوية</div>
+        <div>✅ تفعيل تنبيهات البريد من قسم التنبيهات</div>
+      </div>
+    </div>`);
+}
+
+function renderAssess() {
+  const rq = state.quakes.filter(q => inRegion(q.lat, q.lng));
+  const rFires = state.events.filter(e => e.cat === 'wildfires' && inRegion(e.lat, e.lng));
+  const rStorms = state.events.filter(e => ['severeStorms', 'floods'].includes(e.cat) && inRegion(e.lat, e.lng));
+  const maxMag = rq.length ? Math.max(...rq.map(x => x.mag)) : 0;
+  const now = new Date().toLocaleString('ar-EG');
+  const regionAr = { world: 'العالم', eu: 'أوروبا', af: 'أفريقيا', as: 'آسيا', am: 'الأمريكتان' }[state.region];
+  openDrawer('📊 التقييم الذكي للأوضاع', `
+    <div class="rounded-xl bg-panel2 border border-line p-4 text-[13.5px] leading-loose text-slate-300 space-y-2">
+      <div class="font-black text-white">تقرير الأوضاع — منطقة ${regionAr} · ${now}</div>
+      <p>🔹 <b class="text-white">النشاط الزلزالي:</b> سُجّلت ${rq.length} حدثاً زلزالياً بقوة 2.5 فأعلى خلال آخر 24 ساعة، بقيمة قصوى M${maxMag.toFixed(1)}. ${rq.filter(q => q.mag >= 5).length ? `منها ${rq.filter(q => q.mag >= 5).length} حدثاً بقوة 5+ يستوجب متابعة آثار محتملة.` : 'لا توجد أحداث بقوة 5+ تستوجب قلقاً على المدى القريب.'}</p>
+      <p>🔹 <b class="text-white">النشاط الحريقي:</b> ${rFires.length} حريقاً نشطاً مرصوداً عبر الأقمار الصناعية. ${rFires.length > 30 ? 'الكثافة مرتفعة وتستوجب حشد الموارد ومراقبة اتجاه الرياح.' : rFires.length > 0 ? 'الكثافة ضمن الحدود المعتدلة مع متابعة مستمرة.' : 'لا توجد حرائق نشطة مرصودة حالياً.'}</p>
+      <p>🔹 <b class="text-white">العواصف والفيضانات:</b> ${rStorms.length} حدثاً جويياً نشطاً (عواصف/فيضان) ضمن المنطقة.</p>
+      <p>🔹 <b class="text-white">التوصية:</b> ${rFires.length > 30 || maxMag >= 6 ? 'رفع مستوى الجاهزية وتفعيل خطة الاستجابة السريعة وتوجيه طواقم التقييم الميداني.' : 'الاستمرار في المراقبة الاستباقية وتحديث اللوحات كل 5 دقائق.'}</p>
+      <button onclick="window.print()" class="mt-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 text-[12.5px] transition">🖨️ طباعة / حفظ PDF</button>
+    </div>`);
+  $('print-area').innerHTML = `<h1 style="font-size:22px;margin:0 0 12px">تقرير الأوضاع — DisasterWatch — منطقة ${regionAr}</h1>
+    <p style="font-size:12px;color:#555">${now}</p>
+    <hr style="margin:12px 0" />
+    <p><b>الزلزالي:</b> ${rq.length} حدث · أقصى قوة M${maxMag.toFixed(1)}</p>
+    <p><b>الحرائق:</b> ${rFires.length} حريق نشط</p>
+    <p><b>العواصف والفيضان:</b> ${rStorms.length} حدث</p>
+    <p><b>مؤشر Kp:</b> ${state.kp ?? '—'} · <b>PM2.5:</b> ${state.pm != null ? Math.round(state.pm) : '—'}</p>
+    <hr style="margin:12px 0" />
+    <p style="font-size:11px;color:#777">توليد آلي من بيانات مباشرة: USGS · NASA EONET · NOAA SWPC · Open-Meteo · © DisasterWatch</p>`;
+}
+
+function renderAlerts() {
+  const alerts = state.events.filter(e => ['volcanoes', 'severeStorms', 'floods'].includes(e.cat)).slice(0, 15);
+  openDrawer('🔔 التنبيهات النشطة', `
+    <div class="space-y-2">
+      ${alerts.map(a => { const meta = CAT[a.cat] || {}; const sev = a.cat === 'volcanoes' ? '🔴' : '🟠';
+        return `<div class="rounded-xl bg-panel2 border border-line p-3 flex items-center gap-3">
+          <span class="text-lg">${sev}</span>
+          <div class="flex-1"><div class="font-bold text-[13px] text-white">${a.title}</div>
+          <div class="text-[11px] text-slate-500">${meta.ar || 'حدث'} · ${a.dateAr}</div></div>
+          <button onclick="flyTo(${a.lat},${a.lng})" class="rounded-lg bg-panel border border-line px-2.5 py-1.5 text-[11px] font-bold text-slate-300 hover:border-blue-500">عرض</button>
+        </div>`; }).join('') || '<div class="text-slate-500 text-[13px]">لا توجد تنبيهات نشطة</div>'}
+      <label class="flex items-center gap-2 text-[12.5px] text-slate-400 pt-2 cursor-pointer">
+        <input type="checkbox" id="email-alert" class="accent-blue-600" ${localStorage.getItem('dw_email') === '1' ? 'checked' : ''} />
+        تفعيل تنبيهات البريد للمنطقة المعروضة (حد القوة 4.5+)
+      </label>
+    </div>`);
+  const cb = $('email-alert');
+  if (cb) cb.addEventListener('change', () => { localStorage.setItem('dw_email', cb.checked ? '1' : '0');
+    toast(cb.checked ? '✅ تم تفعيل التنبيهات (وضع تجريبي — يتطلب خادم بريدي)' : '🔕 تم إيقاف التنبيهات'); });
+}
+
+async function renderInfraDrawer() {
+  openDrawer('🏥 البنية التحتية الحيوية', `<div class="text-[13px] text-slate-400">جاري التحميل…</div>`);
+  if (!state.infra.length) await loadInfra();
+  openDrawer('🏥 البنية التحتية الحيوية', `
+    <div class="text-[12.5px] text-slate-400 mb-2">المرافق الصحية ضمن نطاق 100 كم من مركز الخريطة — المصدر: OpenStreetMap</div>
+    <div class="grid sm:grid-cols-2 gap-2">
+      ${state.infra.map(p => `<button onclick="flyTo(${p.lat},${p.lon})" class="rounded-xl bg-panel2 border border-line p-3 text-right hover:border-sky-500/70 transition flex items-center gap-2">
+        <span class="text-sky-400">✚</span><span class="font-bold text-[12.5px] text-white">${p.name}</span></button>`).join('') || '<div class="text-slate-500">لا توجد مرافق مسجلة في هذا النطاق</div>'}
+    </div>`);
+}
+
+function renderRoutes() {
+  const c = map.getCenter();
+  openDrawer('🧭 طرق الإخلاء والانتشار', `
+    <div class="rounded-xl bg-panel2 border border-line p-4 text-[13px] text-slate-300 space-y-2">
+      <div class="font-black text-white">توصيات حركة الآليات اتجاه الرياح</div>
+      <p>الرياح في مركز الخريطة وفق آخر قراءة: استخدم زر <b class="text-white">💨 تحليل ممر الرياح</b> لتحديد اتجاه الدخان والمواد المتطايرة، ويُفضّل توجيه طرق الإخلاء <b>عكس اتجاه الرياح</b> وجنوباً/غرباً حسب الموقع.</p>
+      <p class="text-slate-500 text-[12px]">الموقع الحالي: ${c.lat.toFixed(2)}، ${c.lng.toFixed(2)} — يُنصح بربط هذه اللوحة بأنظمة GIS رسمية لحساب المسارات تلقائياً.</p>
+    </div>`);
+}
+
+const CMDS = { command: renderCommand, prevent: renderPrevent, assess: renderAssess, alerts: renderAlerts, infra: renderInfraDrawer, routes: renderRoutes };
+document.querySelectorAll('.cmd-btn').forEach(b => b.addEventListener('click', () => CMDS[b.dataset.cmd]?.()));
+
+// ================= EXPORTS =================
+function download(name, text, mime) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: mime || 'text/plain;charset=utf-8' }));
+  a.download = name; a.click(); URL.revokeObjectURL(a.href);
+}
+function summaryText() {
+  const rq = state.quakes.filter(q => inRegion(q.lat, q.lng));
+  const rf = state.events.filter(e => e.cat === 'wildfires' && inRegion(e.lat, e.lng));
+  return `تقرير DisasterWatch — ${new Date().toLocaleString('ar-EG')}
+المنطقة: ${{ world: 'العالم', eu: 'أوروبا', af: 'أفريقيا', as: 'آسيا', am: 'الأمريكتان' }[state.region]}
+زلازل 24 ساعة: ${rq.length} (أقصى: M${(rq.length ? Math.max(...rq.map(x => x.mag)) : 0).toFixed(1)})
+حرائق نشطة: ${rf.length}
+أحداث جوية: ${state.events.filter(e => ['severeStorms', 'floods'].includes(e.cat) && inRegion(e.lat, e.lng)).length}
+مؤشر Kp: ${state.kp ?? '—'} · PM2.5: ${state.pm != null ? Math.round(state.pm) : '—'}
+المصادر: USGS · NASA EONET · NOAA SWPC · Open-Meteo`;
+}
+$('exp-txt').addEventListener('click', () => download('disasterwatch-report.txt', summaryText()));
+$('exp-csv').addEventListener('click', () => {
+  const rows = [['النوع', 'العنوان', 'خط العرض', 'خط الطول', 'الوقت'],
+    ...state.quakes.map(q => ['زلزال M' + q.mag.toFixed(1), q.place, q.lat, q.lng, q.timeAr]),
+    ...state.events.map(e => [(CAT[e.cat] || {}).ar || e.cat, e.title, e.lat, e.lng, e.dateAr])];
+  download('disasterwatch-events.csv', '\uFEFF' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n'), 'text/csv;charset=utf-8');
+});
+$('exp-pdf').addEventListener('click', () => { renderAssess(); setTimeout(() => window.print(), 400); });
+
+// ================= CONTROLS =================
+document.querySelectorAll('.watch-chip').forEach(ch => ch.addEventListener('click', () => {
+  document.querySelectorAll('.watch-chip').forEach(c => c.classList.remove('active'));
+  ch.classList.add('active'); state.mode = ch.dataset.mode; applyMode();
+}));
+document.querySelectorAll('.ovl-chip').forEach(ch => ch.addEventListener('click', () => {
+  const k = ch.dataset.ovl; state.layers[k] = !state.layers[k];
+  ch.classList.toggle('active', state.layers[k]); applyLayers();
+}));
+function setRegion(r) {
+  state.region = r;
+  $('region-select').value = r;
+  document.querySelectorAll('#region-pills button').forEach(b => {
+    const on = b.dataset.region === r;
+    b.className = `rounded-lg border px-1 py-1.5 text-[10.5px] font-bold transition ${on ? 'border-blue-500/70 bg-blue-500/10 text-blue-300' : 'border-line text-slate-300 hover:border-blue-500/70'}`;
+  });
+  map.flyTo(REGIONS[r].c, REGIONS[r].z, { duration: 1.4 });
+  updateStats();
+}
+$('region-select').addEventListener('change', e => setRegion(e.target.value));
+document.querySelectorAll('#region-pills button').forEach(b => b.addEventListener('click', () => setRegion(b.dataset.region)));
+$('btn-focus').addEventListener('click', () => {
+  const strong = [...state.quakes].sort((a, b) => b.mag - a.mag)[0];
+  if (strong) { map.flyTo([strong.lat, strong.lng], 6, { duration: 1.4 }); toast(`🎯 الطاقة الأعلى: زلزال M${strong.mag.toFixed(1)} — ${strong.place}`); }
+});
+$('btn-sat').addEventListener('click', () => setTiles(tileKey === 'sat' ? 'gibs' : tileKey === 'gibs' ? 'dark' : 'sat'));
+
+// mobile sidebars
+$('btn-sb-right').addEventListener('click', () => {
+  const el = $('sb-right');
+  el.classList.toggle('hidden');
+  el.classList.toggle('flex');
+  el.classList.add('!absolute', 'inset-y-0', 'start-0', 'z-[900]', 'shadow-2xl');
+});
+$('btn-sb-left').addEventListener('click', () => {
+  const el = $('sb-left');
+  el.classList.toggle('hidden');
+  el.classList.toggle('flex');
+  el.classList.add('!absolute', 'inset-y-0', 'end-0', 'z-[900]', 'shadow-2xl');
+});
+
+// toast
+let toastEl = null;
+function toast(msg) {
+  if (toastEl) toastEl.remove();
+  toastEl = document.createElement('div');
+  toastEl.className = 'fixed bottom-16 left-1/2 -translate-x-1/2 z-[999] rounded-xl bg-slate-900/95 border border-slate-700 text-slate-200 text-[13px] px-5 py-3 shadow-2xl animate-fadeIn';
+  toastEl.textContent = msg;
+  document.body.appendChild(toastEl);
+  setTimeout(() => { if (toastEl) { toastEl.remove(); toastEl = null; } }, 3500);
+}
+
+// clock
+setInterval(() => {
+  const t = new Date().toLocaleTimeString('ar-EG', { hour12: true });
+  setText('clock', t); setText('b-time', t);
+}, 1000);
+
+// ================= INIT =================
+async function init() {
+  await Promise.allSettled([loadQuakes(), loadEvents(), loadKp(), loadAir()]);
+  updateStats();
+  const ov = $('loading');
+  ov.style.opacity = '0';
+  setTimeout(() => ov.style.display = 'none', 500);
+}
+init();
+setInterval(() => { loadQuakes(); loadEvents(); loadKp(); }, 300000);
+setInterval(loadAir, 600000);
+window.addEventListener('resize', () => map.invalidateSize());
+</script>
+</body>
+</html>
