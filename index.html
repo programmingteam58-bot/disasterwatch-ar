@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ديسيستر ووتش — منصة الذكاء الاصطناعي لمراقبة الكوارث عبر الأقمار الصناعية</title>
+<meta name="description" content="منصة مجانية ومفتوحة لرصد الكوارث في الوقت الفعلي عبر 10+ مصادر عالمية: كوبيرنيكوس، ناسا GIBS، سنتينل-2، USGS، GDACS مع تحليل بالذكاء الاصطناعي." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: { sans: ['Tajawal', 'system-ui', 'sans-serif'] },
+      colors: {
+        ink: '#0b1220',
+        ink2: '#111a2e',
+        brand: '#3b82f6',
+        brandDark: '#2563eb',
+      },
+      keyframes: {
+        pulseDot: { '0%,100%': { opacity: '1', transform: 'scale(1)' }, '50%': { opacity: '.45', transform: 'scale(1.35)' } },
+        ping2: { '0%': { transform: 'scale(1)', opacity: '.6' }, '100%': { transform: 'scale(2.6)', opacity: '0' } },
+        fadeUp: { from: { opacity: '0', transform: 'translateY(24px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
+        ticker: { from: { transform: 'translateX(0)' }, to: { transform: 'translateX(50%)' } },
+      },
+      animation: {
+        pulseDot: 'pulseDot 1.4s ease-in-out infinite',
+        ping2: 'ping2 2s cubic-bezier(0,0,.2,1) infinite',
+        fadeUp: 'fadeUp .7s ease both',
+        ticker: 'ticker 30s linear infinite',
+      }
+    }
+  }
+}
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: #f5f7fa; }
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  .glass-grid {
+    background-image:
+      linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+  details > summary { list-style: none; cursor: pointer; }
+  details > summary::-webkit-details-marker { display: none; }
+  details[open] .chev { transform: rotate(180deg); }
+  .ticker-track { display: inline-flex; white-space: nowrap; will-change: transform; }
+</style>
+</head>
+<body class="font-sans text-slate-800 antialiased">
+
+<!-- ================= HEADER ================= -->
+<header class="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-slate-200">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-[72px] flex items-center gap-3">
+    <!-- Logo -->
+    <a href="#" class="flex items-center gap-3 shrink-0">
+      <span class="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-800 to-slate-950 flex items-center justify-center shadow-lg shadow-blue-900/20">
+        <svg class="w-5 h-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"/></svg>
+      </span>
+      <span class="leading-tight hidden sm:block">
+        <span class="block font-black text-[19px] text-slate-900">DisasterWatch</span>
+        <span class="block text-[12px] text-slate-500 -mt-0.5">منصتك الشاملة للذكاء الاصطناعي وبيانات الأقمار الصناعية المفتوحة</span>
+      </span>
+    </a>
+
+    <nav class="hidden lg:flex items-center gap-6 mx-auto text-[15px] font-medium text-slate-600">
+      <a href="#map" class="hover:text-blue-600 transition">الخريطة المباشرة</a>
+      <a href="#features" class="hover:text-blue-600 transition">المزايا</a>
+      <a href="#intel" class="hover:text-blue-600 transition">الاستخبارات</a>
+      <a href="#compare" class="hover:text-blue-600 transition">المقارنة</a>
+      <a href="#faq" class="hover:text-blue-600 transition">الأسئلة الشائعة</a>
+    </nav>
+
+    <div class="flex items-center gap-2 sm:gap-3 ms-auto lg:ms-0">
+      <a href="#" class="hidden sm:inline-block text-[15px] font-bold text-slate-700 hover:text-blue-600 transition px-2">تسجيل الدخول</a>
+      <a href="#demo" class="inline-flex items-center gap-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-[14px] font-bold px-4 sm:px-5 py-2.5 shadow-md shadow-emerald-600/25 transition">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        جرّب العرض التوضيحي
+      </a>
+      <a href="#demo" class="hidden md:inline-flex items-center rounded-full bg-blue-600 hover:bg-blue-700 text-white text-[14px] font-bold px-5 py-2.5 shadow-md shadow-blue-600/25 transition">ابدأ مجاناً</a>
+    </div>
+  </div>
+</header>
+
+<!-- ================= HERO ================= -->
+<section class="relative overflow-hidden">
+  <div class="absolute inset-0 bg-gradient-to-b from-blue-50/70 via-[#f5f7fa] to-[#f5f7fa]"></div>
+  <div class="relative max-w-7xl mx-auto px-4 sm:px-6 pt-12 sm:pt-16 pb-10">
+
+    <!-- badge -->
+    <div class="reveal flex justify-center">
+      <div class="inline-flex items-center gap-2 rounded-full bg-white border border-slate-200 shadow-sm px-4 sm:px-5 py-2.5 text-[14px] sm:text-[15px] font-bold text-blue-600">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+        منصتك الشاملة للذكاء الاصطناعي وبيانات الأقمار الصناعية المفتوحة
+      </div>
+    </div>
+
+    <!-- live -->
+    <div class="reveal flex justify-center mt-5">
+      <div class="inline-flex items-center gap-2.5 rounded-full bg-red-50 border border-red-200 px-4 sm:px-5 py-2.5">
+        <span class="relative flex w-3 h-3">
+          <span class="absolute inline-flex w-full h-full rounded-full bg-red-500 animate-ping2"></span>
+          <span class="relative inline-flex w-3 h-3 rounded-full bg-red-600 animate-pulseDot"></span>
+        </span>
+        <span class="font-black text-red-700 text-[15px]">مباشر</span>
+        <span class="text-red-600/90 text-[14px] font-medium">حدث حرج واحد نشط حول العالم</span>
+      </div>
+    </div>
+
+    <!-- headline -->
+    <h1 class="reveal text-center font-black text-slate-900 leading-[1.15] text-[38px] sm:text-6xl lg:text-[68px] mt-8 tracking-tight">
+      مراقبة الكوارث في<br class="hidden sm:block" />
+      <span class="text-blue-500">الوقت الفعلي</span> مدعومة بالذكاء الاصطناعي
+    </h1>
+
+    <p class="reveal max-w-3xl mx-auto text-center text-slate-600 text-[17px] sm:text-[21px] leading-relaxed mt-6">
+      أكثر منصة متقدمة لرصد الكوارث بالبيانات المفتوحة — تجمع بين <bdi>NASA GIBS</bdi> وسنتينل-2 و<bdi>USGS</bdi> و<bdi>GDACS</bdi> وكوبيرنيكوس <bdi>EMS</bdi> و<bdi>JAXA GSMaP</bdi> وفينغيون/<bdi>CMA</bdi> مع تحليل بصري بالذكاء الاصطناعي.
+    </p>
+
+    <p class="reveal text-center text-slate-500 text-[15px] sm:text-[17px] mt-4 font-medium">
+      رصد للكوارث في الوقت الفعلي · تنبيهات فورية عبر البريد الإلكتروني · تقارير احترافية بصيغة PDF
+    </p>
+
+    <!-- CTA -->
+    <div class="reveal flex flex-wrap items-center justify-center gap-3 mt-8">
+      <a href="#demo" class="rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold px-7 py-3.5 shadow-lg shadow-blue-600/30 transition text-[16px]">ابدأ المراقبة الآن — مجاناً</a>
+      <a href="#map" class="rounded-full bg-white border border-slate-300 hover:border-blue-400 text-slate-700 font-bold px-7 py-3.5 transition text-[16px]">استكشف الخريطة المباشرة</a>
+    </div>
+
+    <!-- stats -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 max-w-4xl mx-auto mt-12">
+      <div class="reveal bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-6 text-center hover:shadow-md transition">
+        <svg class="w-7 h-7 mx-auto text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>
+        <div class="font-black text-slate-900 text-3xl sm:text-4xl mt-2 counter" data-target="380">0</div>
+        <div class="text-slate-500 text-[13px] sm:text-sm font-medium mt-1">زلزال تحت المراقبة</div>
+      </div>
+      <div class="reveal bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-6 text-center hover:shadow-md transition" style="transition-delay:.08s">
+        <svg class="w-7 h-7 mx-auto text-orange-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c4.4 0 8-3.1 8-7.5 0-4.9-4-7.2-6-11.5-1 3.5-3.5 4.5-5 7-1.5-.5-2.5-2-2.5-3.5C5.4 8.7 4 11 4 14.5 4 18.9 7.6 22 12 22z"/></svg>
+        <div class="font-black text-slate-900 text-3xl sm:text-4xl mt-2"><span class="counter" data-target="99">0</span>ألف+</div>
+        <div class="text-slate-500 text-[13px] sm:text-sm font-medium mt-1">بقعة حرارية نشطة</div>
+      </div>
+      <div class="reveal bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-6 text-center hover:shadow-md transition" style="transition-delay:.16s">
+        <svg class="w-7 h-7 mx-auto text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.6a1 1 0 011.4 0l7.6 7.6a1 1 0 010 1.4l-7.6 7.6a1 1 0 01-1.4 0l-7.6-7.6a1 1 0 010-1.4z"/><circle cx="12" cy="12" r="3"/></svg>
+        <div class="font-black text-slate-900 text-3xl sm:text-4xl mt-2 counter" data-target="24">0</div>
+        <div class="text-slate-500 text-[13px] sm:text-sm font-medium mt-1">تنبيهات GDACS متعددة المخاطر</div>
+      </div>
+      <div class="reveal bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-6 text-center hover:shadow-md transition" style="transition-delay:.24s">
+        <svg class="w-7 h-7 mx-auto text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+        <div class="font-black text-slate-900 text-3xl sm:text-4xl mt-2">24/7</div>
+        <div class="text-slate-500 text-[13px] sm:text-sm font-medium mt-1">رصد مستمر على مدار الساعة</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= LIVE TICKER ================= -->
+<div class="bg-ink text-slate-300 py-2.5 overflow-hidden border-y border-slate-800">
+  <div class="ticker-track text-[13px]">
+    <div class="flex items-center gap-8 pe-8 animate-ticker">
+      <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-red-500 animate-pulseDot"></span> <b class="text-white">مباشر</b></span>
+      <span> زلزال M6.9 — 159 كم شمال غرب بورت أوري، فانواتو</span>
+      <span class="text-orange-400">● GDACS برتقالي: فيضانات في فرنسا</span>
+      <span class="text-emerald-400">● GDACS أخضر: إنذار فيضان في إيطاليا</span>
+      <span class="text-orange-400">● 944 بقعة حرارية نشطة — NASA FIRMS VIIRS+MODIS</span>
+      <span>● M6.8 زلزال — 76 كم شمال غرب أوزرنوفسك، روسيا</span>
+      <span class="text-blue-400">● تغذية الأقمار الصناعية نشطة: GIBS · سنتينل-2 · كوبيرنيكوس EMS · JAXA GSMaP · فينغيون-4</span>
+      <span>● M6.0 زلزال — 186 كم شمال غرب بورت أوري، فانواتو</span>
+    </div>
+    <div class="flex items-center gap-8 pe-8 animate-ticker" aria-hidden="true">
+      <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-red-500 animate-pulseDot"></span> <b class="text-white">مباشر</b></span>
+      <span> زلزال M6.9 — 159 كم شمال غرب بورت أوري، فانواتو</span>
+      <span class="text-orange-400">● GDACS برتقالي: فيضانات في فرنسا</span>
+      <span class="text-emerald-400">● GDACS أخضر: إنذار فيضان في إيطاليا</span>
+      <span class="text-orange-400">● 944 بقعة حرارية نشطة — NASA FIRMS VIIRS+MODIS</span>
+      <span>● M6.8 زلزال — 76 كم شمال غرب أوزرنوفسك، روسيا</span>
+      <span class="text-blue-400">● تغذية الأقمار الصناعية نشطة: GIBS · سنتينل-2 · كوبيرنيكوس EMS · JAXA GSMaP · فينغيون-4</span>
+      <span>● M6.0 زلزال — 186 كم شمال غرب بورت أوري، فانواتو</span>
+    </div>
+  </div>
+</div>
+
+<!-- ================= LIVE MAP ================= -->
+<section id="map" class="max-w-7xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
+  <div class="reveal text-center max-w-3xl mx-auto">
+    <h2 class="font-black text-slate-900 text-3xl sm:text-5xl tracking-tight">خريطة الكوارث العالمية <span class="text-blue-500">المباشرة</span></h2>
+    <p class="text-slate-600 text-[16px] sm:text-lg mt-4 leading-relaxed">تعرض حية لحظة بلحظة أكثر من 10 مصادر فضائية وحساسات حول العالم — زلازل، حرائق، فيضان، أعاصير، ثورات بركانية وتقارير مناخية.</p>
+  </div>
+
+  <!-- live map -->
+  <div class="reveal mt-10 rounded-3xl overflow-hidden shadow-2xl shadow-slate-400/40 border border-slate-800">
+    <div class="bg-ink2 text-slate-300 px-4 py-2.5 flex items-center gap-3 text-[12px] border-b border-slate-800 flex-wrap">
+      <span class="flex items-center gap-2 font-bold text-white"><span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulseDot"></span> DisasterWatch</span>
+      <span class="hidden sm:inline text-slate-500">بواسطة ZEUS CONSULTING</span>
+      <span class="ms-auto flex items-center gap-2 text-slate-400" id="map-filters">
+        <button data-layer="all" class="map-chip rounded-md bg-blue-600 text-white px-2.5 py-1 font-bold transition">الكل</button>
+        <button data-layer="quakes" class="map-chip rounded-md bg-slate-800 hover:bg-slate-700 px-2.5 py-1 transition">الزلازل</button>
+        <button data-layer="events" class="map-chip rounded-md bg-slate-800 hover:bg-slate-700 px-2.5 py-1 transition">الحرائق والأحداث</button>
+      </span>
+    </div>
+
+    <div class="relative">
+      <div id="live-map" class="h-[340px] sm:h-[520px] bg-[#0a1220] z-0"></div>
+
+      <!-- loading overlay -->
+      <div id="map-loading" class="absolute inset-0 z-[500] flex items-center justify-center bg-[#0a1220]/80 backdrop-blur-sm pointer-events-none transition-opacity duration-500">
+        <div class="text-center">
+          <div class="w-10 h-10 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto"></div>
+          <p class="text-slate-300 text-sm mt-3 font-medium">جاري تحميل البيانات المباشرة...</p>
+        </div>
+      </div>
+
+      <!-- side panels -->
+      <div class="absolute top-3 start-3 z-[600] w-40 sm:w-52 bg-ink2/90 backdrop-blur rounded-xl border border-slate-800 p-3 text-[11px] text-slate-400 hidden sm:block">
+        <div class="font-bold text-slate-200 mb-2 flex items-center gap-1.5">⌃ مراقبة المخاطر</div>
+        <div class="flex justify-between py-1 border-b border-slate-800"><span class="flex items-center gap-1.5"><i class="w-2 h-2 rounded-full bg-blue-500 inline-block"></i> زلزالي</span><b id="eq-count" class="text-blue-400">…</b></div>
+        <div class="flex justify-between py-1 border-b border-slate-800"><span class="flex items-center gap-1.5"><i class="w-2 h-2 rounded-full bg-orange-500 inline-block"></i> حرائق</span><b id="fire-count" class="text-orange-400">…</b></div>
+        <div class="flex justify-between py-1 border-b border-slate-800"><span class="flex items-center gap-1.5"><i class="w-2 h-2 rounded-full bg-red-500 inline-block"></i> براكين</span><b id="volcano-count" class="text-red-400">…</b></div>
+        <div class="flex justify-between py-1 border-b border-slate-800"><span class="flex items-center gap-1.5"><i class="w-2 h-2 rounded-full bg-amber-400 inline-block"></i> عواصف وفيضان</span><b id="storm-count" class="text-amber-400">…</b></div>
+        <div class="flex justify-between py-1"><span class="flex items-center gap-1.5"><i class="w-2 h-2 rounded-full bg-purple-400 inline-block"></i> أحداث أخرى</span><b id="other-count" class="text-purple-400">…</b></div>
+      </div>
+      <div class="absolute top-3 end-3 z-[600] w-40 sm:w-48 bg-ink2/90 backdrop-blur rounded-xl border border-slate-800 p-3 text-[11px] hidden sm:block">
+        <div class="font-bold text-slate-200 mb-2">◈ نظرة عامة على المخاطر</div>
+        <div class="rounded-lg bg-gradient-to-l from-red-900/50 to-orange-900/30 border border-red-900/40 p-2 mb-2">
+          <div class="text-orange-300 font-bold">🔥 الحرائق النشطة</div>
+          <div class="flex justify-between mt-1 text-slate-300"><span>أحداث: <b id="ov-fire">…</b></span></div>
+        </div>
+        <div class="rounded-lg bg-gradient-to-l from-orange-900/40 to-amber-900/20 border border-orange-900/40 p-2 mb-2">
+          <div class="text-amber-300 font-bold">⚡ الزلزالي (24 ساعة)</div>
+          <div class="flex justify-between mt-1 text-slate-300"><span>أحداث: <b id="ov-eq">…</b></span><span>أقوى: <b id="ov-max">…</b></span></div>
+        </div>
+        <div class="rounded-lg bg-gradient-to-l from-blue-900/40 to-slate-800/40 border border-blue-900/40 p-2">
+          <div class="text-blue-300 font-bold">🌊 الفيضان والعواصف</div>
+          <div class="flex justify-between mt-1 text-slate-300"><span>أحداث: <b id="ov-storm">…</b></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-ink2 text-slate-400 px-4 py-2.5 flex flex-wrap items-center gap-4 text-[12px] border-t border-slate-800">
+      <span class="text-blue-400">زلازل <b id="bar-eq" class="text-white">…</b></span>
+      <span class="text-orange-400">حرائق <b id="bar-fire" class="text-white">…</b></span>
+      <span class="text-purple-400">أحداث مفتوحة <b id="bar-events" class="text-white">…</b></span>
+      <span class="ms-auto flex items-center gap-3">
+        <a href="https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson" target="_blank" rel="noopener" class="rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-1.5 transition">مصدر البيانات: USGS ↗</a>
+        <span id="last-update" class="hidden sm:inline">آخر تحديث: الآن</span>
+      </span>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FEATURES ================= -->
+<section id="features" class="max-w-7xl mx-auto px-4 sm:px-6 pb-16 sm:pb-24">
+  <div class="reveal text-center max-w-3xl mx-auto">
+    <h2 class="font-black text-slate-900 text-3xl sm:text-5xl tracking-tight">كل ما تحتاجه لمراقبة التهديدات الكوكبية</h2>
+    <p class="text-slate-600 text-[16px] sm:text-lg mt-4">منصة واحدة تجمع الرصد والاستشعار عن بُعد والتحليل الذكي والتقارير.</p>
+  </div>
+
+  <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mt-12">
+    <!-- card 1 -->
+    <div class="reveal group bg-white rounded-2xl border border-slate-200 p-6 hover:shadow-xl hover:shadow-slate-300/40 hover:-translate-y-1 transition duration-300">
+      <span class="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-2xl group-hover:scale-110 transition">🌍</span>
+      <h3 class="font-black text-slate-900 text-lg mt-4">تتبع الزلازل المباشر</h3>
+      <p class="text-slate-600 text-[14.5px] leading-relaxed mt-2">300–400 حدث يومياً حول العالم بقوة 2.5 فما فوق من شبكة USGS مع تحديد الموقع والشدة والعمق لحظياً.</p>
+    </div>
+    <!-- card 2 -->
+    <div class="reveal group bg-white rounded-2xl border border-slate-200 p-6 hover:shadow-xl hover:shadow-slate-300/40 hover:-translate-y-1 transition duration-300" style="transition-delay:.06s">
+      <span class="w-12 h-12 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center text-2xl group-hover:scale-110 transition">🔥</span>
+      <h3 class="font-black text-slate-900 text-lg mt-4">رصد حرائق الغابات</h3>
+      <p class="text-slate-600 text-[14.5px] leading-relaxed mt-2">من 30,000 إلى أكثر من 80,000 بقعة حرارية يومياً من مستشعرات <bdi>NASA VIIRS</bdi> و<bdi>MODIS</bdi> مع مؤشر خطر الحرائق <bdi>EFFIS</bdi>.</p>
+    </div>
+    <!-- card 3 -->
+    <div class="reveal group bg-white rounded-2xl border border-slate-200 p-6 hover:shadow-xl hover:shadow-slate-300/40 hover:-translate-y-1 transition duration-300" style="transition-delay:.12s">
+      <span class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-2xl group-hover:scale-110 transition">🛰️</span>
+      <h3 class="font-black text-slate-900 text-lg mt-4">صور سنتينل-2 بدقة 10م</h3>
+      <p class="text-slate-600 text-[14.5px] leading-relaxed mt-2">مؤشرات <bdi>NDVI</bdi> (الغطاء النباتي) و<bdi>NBR</bdi> (شدة الحرق) و<bdi>NDWI</bdi> (المياه) وموجات <bdi>SWIR</bdi> وألوان زائفة عبر <bdi>STAC Planetary Computer</bdi>.</p>
+    </div>
+    <!-- card 4 -->
+    <div class="reveal group bg-white rounded-2xl border border-slate-200 p-6 hover:shadow-xl hover:shadow-slate-300/40 hover:-translate-y-1 transition duration-300" style="transition-delay:.06s">
+      <span class="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-2xl group-hover:scale-110 transition">🤖</span>
+      <h3 class="font-black text-slate-900 text-lg mt-4">تحليل بصري بالذكاء الاصطناعي</h3>
+      <p class="text-slate-600 text-[14.5px] leading-relaxed mt-2">تحليل صور الأقمار الصناعية بتقنية GPT-4o مع درجة ثقة مُهيكلة وتوليد تقييم مخاطر جغرافية متعدد العوامل.</p>
+    </div>
+    <!-- card 5 -->
+    <div class="reveal group bg-white rounded-2xl border border-slate-200 p-6 hover:shadow-xl hover:shadow-slate-300/40 hover:-translate-y-1 transition duration-300" style="transition-delay:.12s">
+      <span class="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-2xl group-hover:scale-110 transition">📋</span>
+      <h3 class="font-black text-slate-900 text-lg mt-4">لوحة قيادة العمليات (ICS)</h3>
+      <p class="text-slate-600 text-[14.5px] leading-relaxed mt-2">إنشاء وإدارة وتتبع الحوادث وفق معايير النظام المعملي الأمريكي ICS مع مولّد تقارير الأوضاع SITREP بالذكاء الاصطناعي.</p>
+    </div>
+    <!-- card 6 -->
+    <div class="reveal group bg-white rounded-2xl border border-slate-200 p-6 hover:shadow-xl hover:shadow-slate-300/40 hover:-translate-y-1 transition duration-300" style="transition-delay:.18s">
+      <span class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-2xl group-hover:scale-110 transition">🗺️</span>
+      <h3 class="font-black text-slate-900 text-lg mt-4">طبقة البنية التحتية الحيوية</h3>
+      <p class="text-slate-600 text-[14.5px] leading-relaxed mt-2">مستشفيات ومحطات طاقة وسدود ومحطات إطفاء من OpenStreetMap مُضاف فوق مناطق الكوارث لتقييم الأثر فوراً.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= DARK INTEL SECTION ================= -->
+<section id="intel" class="bg-ink text-white">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
+    <div class="reveal flex justify-center">
+      <span class="inline-flex items-center gap-2 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[13px] font-black px-4 py-2 tracking-wide">
+        <span class="text-base">✦</span> استخبارات استباقية
+      </span>
+    </div>
+    <h2 class="reveal text-center font-black text-4xl sm:text-6xl mt-6 tracking-tight leading-[1.15]">
+      استخبارات تتصرف<br /><span class="text-orange-400">قبل وقوع الكارثة</span>
+    </h2>
+    <p class="reveal text-center text-slate-400 text-[16px] sm:text-lg max-w-2xl mx-auto mt-5 leading-relaxed">
+      لا تنتظر المنصة حتى تتأكد الحوادث. إنها تكتشف إشارات ما قبل الكارثة في بيانات الأقمار الصناعية والزلازل المباشرة — وتوفر استخبارات قابلة للتنفيذ قبل ساعات من الضربة.
+    </p>
+
+    <!-- stats -->
+    <div class="grid sm:grid-cols-3 gap-4 sm:gap-5 max-w-4xl mx-auto mt-12">
+      <div class="reveal bg-ink2 border border-slate-800 rounded-2xl p-6 text-center hover:border-blue-500/50 transition">
+        <span class="text-3xl">⏱️</span>
+        <div class="font-black text-3xl sm:text-4xl text-blue-400 mt-2"><span class="counter" data-target="19">0</span> ساعة</div>
+        <div class="text-slate-300 font-bold text-sm mt-1">متوسط الإنذار المبكر</div>
+        <div class="text-slate-500 text-xs mt-1">قبل تأكيد الكارثة</div>
+      </div>
+      <div class="reveal bg-ink2 border border-slate-800 rounded-2xl p-6 text-center hover:border-orange-500/50 transition" style="transition-delay:.08s">
+        <span class="text-3xl">📡</span>
+        <div class="font-black text-3xl sm:text-4xl text-orange-400 mt-2 counter" data-target="6">0</div>
+        <div class="text-slate-300 font-bold text-sm mt-1">إشارة خطر نشطة الآن</div>
+        <div class="text-slate-500 text-xs mt-1">من أنماط البيانات المباشرة</div>
+      </div>
+      <div class="reveal bg-ink2 border border-slate-800 rounded-2xl p-6 text-center hover:border-emerald-500/50 transition" style="transition-delay:.16s">
+        <span class="text-3xl">🌐</span>
+        <div class="font-black text-3xl sm:text-4xl text-emerald-400 mt-2">عالمي+</div>
+        <div class="text-slate-300 font-bold text-sm mt-1">تغطية إقليمية ودولية</div>
+        <div class="text-slate-500 text-xs mt-1">مصمم للمنطقة العربية والعالم</div>
+      </div>
+    </div>
+
+    <!-- comparison -->
+    <div class="grid lg:grid-cols-2 gap-5 max-w-5xl mx-auto mt-12">
+      <div class="reveal bg-ink2 rounded-2xl p-6 border-t-4 border-red-500/80">
+        <div class="flex items-center gap-2 text-slate-400 text-[13px] font-black tracking-wide mb-5">
+          <span>⊘</span> النهج التقليدي — تفاعلي
+        </div>
+        <ul class="space-y-3.5 text-[14.5px]">
+          <li class="flex items-center gap-3"><span class="text-slate-600 text-xs font-mono w-10">T+4س</span><span class="w-2 h-2 rounded-full bg-red-500 shrink-0"></span> <span class="text-red-400 font-bold">الكارثة تضرب</span></li>
+          <li class="flex items-center gap-3"><span class="text-slate-600 text-xs font-mono w-10">T+2س</span><span class="w-2 h-2 rounded-full bg-slate-600 shrink-0"></span> <span class="text-slate-400">تظهر أول الأخبار والإشاعات</span></li>
+          <li class="flex items-center gap-3"><span class="text-slate-600 text-xs font-mono w-10">T+4س</span><span class="w-2 h-2 rounded-full bg-slate-600 shrink-0"></span> <span class="text-slate-400">تبدأ التقييمات الرسمية</span></li>
+          <li class="flex items-center gap-3"><span class="text-slate-600 text-xs font-mono w-10">T+8س</span><span class="w-2 h-2 rounded-full bg-slate-600 shrink-0"></span> <span class="text-slate-400">طلب الموارد وحشد الطواقم</span></li>
+          <li class="flex items-center gap-3"><span class="text-slate-600 text-xs font-mono w-10">T+16س</span><span class="w-2 h-2 rounded-full bg-slate-600 shrink-0"></span> <span class="text-slate-400">وصول فرق الاستجابة إلى المناطق المتضررة</span></li>
+        </ul>
+        <p class="text-slate-500 text-[13px] mt-5 border-t border-slate-800 pt-4">+16 ساعة ضائعة. الأرواح في خطر. الاستجابة تجري تحت الضغط.</p>
+      </div>
+
+      <div class="reveal bg-ink2 rounded-2xl p-6 border-t-4 border-blue-500/80 relative overflow-hidden" style="transition-delay:.1s">
+        <div class="absolute -top-16 -start-16 w-48 h-48 rounded-full bg-blue-600/10 blur-2xl"></div>
+        <div class="relative flex items-center gap-2 text-blue-400 text-[13px] font-black tracking-wide mb-5">
+          <span>◈</span> ديسيستر ووتش — استخبارات استباقية
+        </div>
+        <ul class="relative space-y-3.5 text-[14.5px]">
+          <li class="flex items-center gap-3"><span class="text-slate-600 text-xs font-mono w-12">T−12س</span><span class="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span> <span class="text-slate-300">اكتشاف عنقود زلزالي. تنبيه الفرق.</span></li>
+          <li class="flex items-center gap-3"><span class="text-slate-600 text-xs font-mono w-12">T−8س</span><span class="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span> <span class="text-slate-300">توزيع الموارد مسبقاً ضمن نطاق 50 كم.</span></li>
+          <li class="flex items-center gap-3"><span class="text-slate-600 text-xs font-mono w-12">T−4س</span><span class="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span> <span class="text-slate-300">تأكيد طرق الإخلاء ونشرها.</span></li>
+          <li class="flex items-center gap-3"><span class="text-slate-600 text-xs font-mono w-12">T−1س</span><span class="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span> <span class="text-slate-300">فرق الطوارئ في الاستعداد، مُحَدَّث.</span></li>
+          <li class="flex items-center gap-3"><span class="text-slate-600 text-xs font-mono w-12">T+0</span><span class="w-2 h-2 rounded-full bg-white shrink-0"></span> <span class="text-white font-bold">الكارثة تضرب — الاستجابة فعّالة بالفعل</span></li>
+        </ul>
+        <p class="text-blue-300/80 text-[13px] mt-5 border-t border-slate-800 pt-4">+12 ساعة من العمل الاستباقي. خسائر أقل. تعافٍ أسرع.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= WHY / STATS ================= -->
+<section class="max-w-7xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
+  <div class="reveal text-center max-w-3xl mx-auto">
+    <h2 class="font-black text-slate-900 text-3xl sm:text-5xl tracking-tight">كل دقيقة <span class="text-red-500">تصنع الفرق</span> في الكارثة</h2>
+    <p class="text-slate-600 text-[16px] sm:text-lg mt-4">أرقام من مكتب الأمم المتحدة لتقليل مخاطر الكوارث (UNDRR) والبيئة الأوروبية.</p>
+  </div>
+
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-12">
+    <div class="reveal bg-white rounded-2xl border border-slate-200 p-6 text-center shadow-sm hover:shadow-md transition">
+      <div class="font-black text-4xl text-red-500"><span class="counter" data-target="65000">0</span>+</div>
+      <div class="text-slate-600 font-medium text-sm mt-2">ضحية سنوياً للكوارث الطبيعية حول العالم</div>
+    </div>
+    <div class="reveal bg-white rounded-2xl border border-slate-200 p-6 text-center shadow-sm hover:shadow-md transition" style="transition-delay:.08s">
+      <div class="font-black text-4xl text-slate-900">€<span class="counter" data-target="200">0</span> مليار+</div>
+      <div class="text-slate-600 font-medium text-sm mt-2">الخسائر الاقتصادية السنوية للكوارث</div>
+    </div>
+    <div class="reveal bg-white rounded-2xl border border-slate-200 p-6 text-center shadow-sm hover:shadow-md transition" style="transition-delay:.16s">
+      <div class="font-black text-4xl text-amber-500">3–6 أشهر</div>
+      <div class="text-slate-600 font-medium text-sm mt-2">متوسط زمن التعافي في الدول النامية</div>
+    </div>
+    <div class="reveal bg-white rounded-2xl border border-slate-200 p-6 text-center shadow-sm hover:shadow-md transition" style="transition-delay:.24s">
+      <div class="font-black text-4xl text-blue-500"><span class="counter" data-target="15">0</span> مليار+</div>
+      <div class="text-slate-600 font-medium text-sm mt-2">شخص تتأثر آثارهم المناخية مباشرة</div>
+    </div>
+  </div>
+
+  <div class="reveal mt-10 bg-gradient-to-l from-blue-600 to-blue-700 rounded-3xl text-white p-8 sm:p-12 text-center shadow-xl shadow-blue-600/25 max-w-5xl mx-auto">
+    <p class="text-blue-100 text-[16px] sm:text-lg leading-relaxed max-w-3xl mx-auto">
+      وسائل الإنذار المبكر والرصد الفضائي يمكن أن تخفض خسائر الكوارث حتى <b class="text-white text-xl">30%</b> وفقاً لإطار سنداي للتصدي للكوارث (2015–2030). منصة ديسيستر ووتش تجعل هذه التقنية متاحة مجاناً لفرق الطوارئ والباحثين والمنظمات الإنسانية والمشاريع الممولة من الاتحاد الأوروبي.
+    </p>
+  </div>
+</section>
+
+<!-- ================= AUDIENCE ================= -->
+<section class="bg-white border-y border-slate-200">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
+    <div class="reveal text-center max-w-3xl mx-auto">
+      <h2 class="font-black text-slate-900 text-3xl sm:text-5xl tracking-tight">مصممة لمن <span class="text-blue-500">يتصرف أولاً</span></h2>
+      <p class="text-slate-600 text-[16px] sm:text-lg mt-4">لفرق الطوارئ والباحثين والمنظمات التي تعمل تحت ضغط الوقت.</p>
+    </div>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mt-12">
+      <div class="reveal rounded-2xl border border-slate-200 p-6 bg-slate-50 hover:border-blue-300 hover:shadow-md transition">
+        <span class="text-3xl">🚨</span>
+        <h3 class="font-black text-slate-900 mt-3">فرق إدارة الطوارئ</h3>
+        <p class="text-slate-600 text-[14px] leading-relaxed mt-2">لوحة قيادة عمليات موحدة وصور فورية للمناطق المتضررة قبل وصول الطواقم.</p>
+      </div>
+      <div class="reveal rounded-2xl border border-slate-200 p-6 bg-slate-50 hover:border-blue-300 hover:shadow-md transition" style="transition-delay:.06s">
+        <span class="text-3xl">🏛️</span>
+        <h3 class="font-black text-slate-900 mt-3">الحماية المدنية</h3>
+        <p class="text-slate-600 text-[14px] leading-relaxed mt-2">تنبيهات GDACS ومؤشرات خطر متوافقة مع آليات الحماية المدنية الأوروبية.</p>
+      </div>
+      <div class="reveal rounded-2xl border border-slate-200 p-6 bg-slate-50 hover:border-blue-300 hover:shadow-md transition" style="transition-delay:.12s">
+        <span class="text-3xl">🎓</span>
+        <h3 class="font-black text-slate-900 mt-3">الباحثون والأكاديميون</h3>
+        <p class="text-slate-600 text-[14px] leading-relaxed mt-2">قاعدة بيانات تاريخية للأحداث وتحليلات مناخية ERA5 وتقارير قابلة للتنزيل PDF.</p>
+      </div>
+      <div class="reveal rounded-2xl border border-slate-200 p-6 bg-slate-50 hover:border-blue-300 hover:shadow-md transition" style="transition-delay:.18s">
+        <span class="text-3xl">🤝</span>
+        <h3 class="font-black text-slate-900 mt-3">المنظمات الإنسانية</h3>
+        <p class="text-slate-600 text-[14px] leading-relaxed mt-2">صورة شاملة للكارثة لدعم القرار وتوجيه المساعدات بسرعة وفعالية.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= COMPARISON TABLE ================= -->
+<section id="compare" class="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
+  <div class="reveal text-center max-w-3xl mx-auto">
+    <h2 class="font-black text-slate-900 text-3xl sm:text-5xl tracking-tight">المنصة الوحيدة <span class="text-blue-500">المجانية والمفتوحة</span> متعددة المصادر</h2>
+    <p class="text-slate-600 text-[16px] sm:text-lg mt-4">قارن بنفسك — لماذا يجمع ديسيستر ووتش كل شيء في مكان واحد؟</p>
+  </div>
+
+  <div class="reveal mt-12 overflow-x-auto rounded-2xl border border-slate-200 shadow-lg shadow-slate-200/60 bg-white">
+    <table class="w-full text-[14.5px] min-w-[640px]">
+      <thead>
+        <tr class="bg-slate-50 border-b border-slate-200">
+          <th class="text-start p-4 font-black text-slate-900">الميزة</th>
+          <th class="p-4 font-black text-blue-600 bg-blue-50/70">DisasterWatch</th>
+          <th class="p-4 font-black text-slate-500">منصات أخرى</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        <tr><td class="p-4 text-slate-700 font-medium">تعدد مصادر البيانات (10+)</td><td class="p-4 text-center text-emerald-600 font-black">✓</td><td class="p-4 text-center text-slate-400">محدود</td></tr>
+        <tr class="bg-slate-50/40"><td class="p-4 text-slate-700 font-medium">تحليل بصري بالذكاء الاصطناعي (GPT-4o)</td><td class="p-4 text-center text-emerald-600 font-black">✓</td><td class="p-4 text-center text-slate-400">✗</td></tr>
+        <tr><td class="p-4 text-slate-700 font-medium">لوحة قيادة عمليات ICS متكاملة</td><td class="p-4 text-center text-emerald-600 font-black">✓</td><td class="p-4 text-center text-slate-400">✗</td></tr>
+        <tr class="bg-slate-50/40"><td class="p-4 text-slate-700 font-medium">مولّد تقارير SITREP بالذكاء الاصطناعي</td><td class="p-4 text-center text-emerald-600 font-black">✓</td><td class="p-4 text-center text-slate-400">✗</td></tr>
+        <tr><td class="p-4 text-slate-700 font-medium">تحليلات مناخية ERA5 لعشر سنوات</td><td class="p-4 text-center text-emerald-600 font-black">✓</td><td class="p-4 text-center text-slate-400">✗</td></tr>
+        <tr class="bg-slate-50/40"><td class="p-4 text-slate-700 font-medium">طبقة البنية التحتية الحيوية (OSM)</td><td class="p-4 text-center text-emerald-600 font-black">✓</td><td class="p-4 text-center text-slate-400">محدود</td></tr>
+        <tr><td class="p-4 text-slate-700 font-medium">استخدام مجاني بالكامل دون اشتراك</td><td class="p-4 text-center text-emerald-600 font-black">✓</td><td class="p-4 text-center text-slate-400">مدفوع</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================= FAQ ================= -->
+<section id="faq" class="max-w-4xl mx-auto px-4 sm:px-6 pb-16 sm:pb-24">
+  <div class="reveal text-center">
+    <h2 class="font-black text-slate-900 text-3xl sm:text-5xl tracking-tight">الأسئلة <span class="text-blue-500">الشائعة</span></h2>
+  </div>
+
+  <div class="mt-10 space-y-3">
+    <details class="reveal group bg-white rounded-2xl border border-slate-200 p-5 hover:border-blue-300 transition" open>
+      <summary class="flex items-center justify-between gap-4 font-black text-slate-900 text-[16px]">
+        هل استخدام المنصة مجاني فعلاً؟
+        <svg class="chev w-5 h-5 text-blue-500 shrink-0 transition" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+      </summary>
+      <p class="text-slate-600 leading-relaxed mt-3 text-[15px]">نعم، مجانية بالكامل. عرض مباشر كامل دون الحاجة إلى إنشاء حساب، مع دعم النشر المؤسسي ومشاريع الأبحاث.</p>
+    </details>
+    <details class="reveal group bg-white rounded-2xl border border-slate-200 p-5 hover:border-blue-300 transition">
+      <summary class="flex items-center justify-between gap-4 font-black text-slate-900 text-[16px]">
+        ما هي الكوارث التي تستطيع المنصة رصدها؟
+        <svg class="chev w-5 h-5 text-blue-500 shrink-0 transition" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+      </summary>
+      <p class="text-slate-600 leading-relaxed mt-3 text-[15px]">الزلازل، حرائق الغابات، الفيضانات، الأعاصير الاستوائية، الثورات البركانية، الجفاف (عبر شذوذ ERA5)، وأي تنبيه متعدد المخاطر من UN GDACS حول العالم.</p>
+    </details>
+    <details class="reveal group bg-white rounded-2xl border border-slate-200 p-5 hover:border-blue-300 transition">
+      <summary class="flex items-center justify-between gap-4 font-black text-slate-900 text-[16px]">
+        ما هي خدمات كوبيرنيكوس المدمجة؟
+        <svg class="chev w-5 h-5 text-blue-500 shrink-0 transition" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+      </summary>
+      <p class="text-slate-600 leading-relaxed mt-3 text-[15px]">خدمة كوبيرنيكوس للطوارئ (عبر <bdi>GDACS</bdi>)، و<bdi>EFFIS</bdi> (مؤشر خطر الحرائق عبر <bdi>JRC WMS</bdi>)، و<bdi>GloFAS</bdi> (التنبؤ بالفيضانات)، وإعادة التحليل المناخي <bdi>ERA5</bdi>، إضافة إلى صور سنتينل-2 متعددة الأطياف بدقة 10 أمتار.</p>
+    </details>
+    <details class="reveal group bg-white rounded-2xl border border-slate-200 p-5 hover:border-blue-300 transition">
+      <summary class="flex items-center justify-between gap-4 font-black text-slate-900 text-[16px]">
+        هل تدعم المنصة مشاريع أبحاث الاتحاد الأوروبي؟
+        <svg class="chev w-5 h-5 text-blue-500 shrink-0 transition" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+      </summary>
+      <p class="text-slate-600 leading-relaxed mt-3 text-[15px]">نعم — المنصة متوافقة مع أهداف برنامج هورايزن أوروبا (عنقود 3 للأمن المدني والعنقود 5 للمناخ والطاقة والنقل)، وإطار سنداي لتقليل مخاطر الكوارث، وبرنامج <bdi>LIFE</bdi>، و<bdi>Interreg</bdi>، ومعايير <bdi>DG ECHO</bdi>.</p>
+    </details>
+    <details class="reveal group bg-white rounded-2xl border border-slate-200 p-5 hover:border-blue-300 transition">
+      <summary class="flex items-center justify-between gap-4 font-black text-slate-900 text-[16px]">
+        كيف أحصل على التنبيهات الفورية؟
+        <svg class="chev w-5 h-5 text-blue-500 shrink-0 transition" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+      </summary>
+      <p class="text-slate-600 leading-relaxed mt-3 text-[15px]">يمكنك تفعيل تنبيهات البريد الإلكتروني لمناطق محددة وحدود شدة مخصصة، فتصلك إشعارات فورية عند تسجيل أي حدث يطابق معاييرك.</p>
+    </details>
+    <details class="reveal group bg-white rounded-2xl border border-slate-200 p-5 hover:border-blue-300 transition">
+      <summary class="flex items-center justify-between gap-4 font-black text-slate-900 text-[16px]">
+        من يقف خلف المنصة؟
+        <svg class="chev w-5 h-5 text-blue-500 shrink-0 transition" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+      </summary>
+      <p class="text-slate-600 leading-relaxed mt-3 text-[15px]">تُطوَّر المنصة بواسطة ZEUS CONSULTING، وهي شركة استشارية تقنية وبحثية متخصصة في منصات الاستشعار عن بُعد المدعومة بالذكاء الاصطناعي ومشاريع التمويل البحثي الأوروبية.</p>
+    </details>
+  </div>
+</section>
+
+<!-- ================= CTA ================= -->
+<section id="demo" class="max-w-7xl mx-auto px-4 sm:px-6 pb-16 sm:pb-24">
+  <div class="reveal relative overflow-hidden rounded-3xl bg-gradient-to-bl from-blue-700 via-blue-600 to-indigo-700 text-white p-10 sm:p-16 text-center shadow-2xl shadow-blue-700/30">
+    <div class="absolute -top-24 -start-24 w-72 h-72 rounded-full bg-white/10 blur-3xl"></div>
+    <div class="absolute -bottom-24 -end-24 w-72 h-72 rounded-full bg-cyan-400/10 blur-3xl"></div>
+    <div class="relative">
+      <h2 class="font-black text-3xl sm:text-5xl tracking-tight leading-tight">ابدأ مراقبة الكوارث<br class="hidden sm:block" /> في الوقت الفعلي <span class="text-cyan-300">اليوم</span></h2>
+      <p class="text-blue-100 text-[16px] sm:text-lg mt-5 max-w-2xl mx-auto">جرّب المنصة الكاملة فوراً — دون تسجيل حساب. جميع تدفقات الأقمار الصناعية وطبقات كوبيرنيكوس والتحليل بالذكاء الاصطناعي ولوحة قيادة العمليات متاحة مباشرة.</p>
+      <div class="flex flex-wrap items-center justify-center gap-3 mt-8">
+        <a href="#" class="rounded-full bg-white text-blue-700 font-black px-8 py-4 shadow-lg hover:scale-105 transition text-[16px]">افتح العرض التوضيحي المباشر</a>
+        <a href="#contact" class="rounded-full border-2 border-white/40 hover:border-white text-white font-bold px-8 py-4 transition text-[16px]">تواصل معنا</a>
+      </div>
+      <p class="text-blue-200 text-[13px] mt-6">تُطوَّر بواسطة ZEUS CONSULTING — info@zeusconsulting.com</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FOOTER ================= -->
+<footer id="contact" class="bg-ink text-slate-400">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-14">
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-10">
+      <div class="lg:col-span-2">
+        <div class="flex items-center gap-3">
+          <span class="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-800 to-slate-950 border border-slate-800 flex items-center justify-center">
+            <svg class="w-5 h-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"/></svg>
+          </span>
+          <div>
+            <div class="font-black text-white text-lg">DisasterWatch</div>
+            <div class="text-[12px] text-slate-500 -mt-0.5">بواسطة ZEUS CONSULTING</div>
+          </div>
+        </div>
+        <p class="text-slate-500 text-[14px] leading-relaxed mt-4 max-w-md">منصة مجانية ومفتوحة للوصول لرصد الكوارث حول العالم في الوقت الفعلي، تجمع أكثر من 10 مصادر فضائية وحساسات مع تحليل ذكي وتقارير احترافية.</p>
+        <div class="flex items-center gap-3 mt-5 text-[13px]">
+          <a href="#" class="hover:text-blue-400 transition">𝕏</a>
+          <a href="#" class="hover:text-blue-400 transition">in</a>
+          <a href="#" class="hover:text-blue-400 transition">✉️</a>
+        </div>
+      </div>
+      <div>
+        <div class="font-black text-white mb-4">المنصة</div>
+        <ul class="space-y-2.5 text-[14px]">
+          <li><a href="#map" class="hover:text-blue-400 transition">الخريطة المباشرة</a></li>
+          <li><a href="#features" class="hover:text-blue-400 transition">المزايا</a></li>
+          <li><a href="#intel" class="hover:text-blue-400 transition">الاستخبارات الاستباقية</a></li>
+          <li><a href="#demo" class="hover:text-blue-400 transition">العرض التوضيحي</a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="font-black text-white mb-4">مصادر البيانات</div>
+        <ul class="space-y-2.5 text-[14px]">
+          <li>كوبيرنيكوس EMS / EFFIS</li>
+          <li>NASA GIBS / FIRMS</li>
+          <li>ESA سنتينل-2</li>
+          <li>USGS / UN GDACS</li>
+          <li>JAXA GSMaP / فينغيون-4</li>
+        </ul>
+      </div>
+    </div>
+    <div class="border-t border-slate-800 mt-10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-[13px] text-slate-500">
+      <span>© 2026 DisasterWatch — جميع الحقوق محفوظة.</span>
+      <span class="flex items-center gap-4">
+        <a href="#" class="hover:text-slate-300 transition">سياسة الخصوصية</a>
+        <a href="#" class="hover:text-slate-300 transition">شروط الاستخدام</a>
+      </span>
+    </div>
+  </div>
+</footer>
+
+<script>
+// scroll reveal
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+}, { threshold: .12 });
+document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+// counters
+function animateCount(el) {
+  const target = +el.dataset.target;
+  const dur = 1400, start = performance.now();
+  function tick(now) {
+    const p = Math.min((now - start) / dur, 1);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.floor(target * eased).toLocaleString('ar-EG');
+    if (p < 1) requestAnimationFrame(tick);
+    else el.textContent = target.toLocaleString('ar-EG');
+  }
+  requestAnimationFrame(tick);
+}
+const co = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) { animateCount(e.target); co.unobserve(e.target); } });
+}, { threshold: .6 });
+document.querySelectorAll('.counter').forEach(el => co.observe(el));
+
+// ================= LIVE MAP =================
+(function () {
+  if (typeof L === 'undefined') return;
+  const map = L.map('live-map', {
+    center: [25, 30],
+    zoom: 2,
+    minZoom: 2,
+    maxZoom: 10,
+    worldCopyJump: true,
+    zoomControl: true,
+    attributionControl: true,
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    subdomains: 'abc',
+    maxZoom: 19,
+  }).addTo(map);
+
+  // dark theme filter for OSM tiles
+  const style = document.createElement('style');
+  style.textContent = `
+    .leaflet-tile-pane { filter: invert(100%) hue-rotate(180deg) brightness(85%) contrast(95%) saturate(25%) !important; }
+    .leaflet-control-attribution { background: rgba(15,23,42,0.85) !important; color: #94a3b8 !important; font-size: 10px !important; }
+    .leaflet-control-attribution a { color: #60a5fa !important; }
+    .leaflet-bar a { background: rgba(15,23,42,0.9) !important; color: #e2e8f0 !important; border-color: #334155 !important; }
+    .leaflet-bar a:hover { background: rgba(30,41,59,0.95) !important; }
+  `;
+  document.head.appendChild(style);
+
+  const quakeLayer = L.layerGroup().addTo(map);
+  const eventLayer = L.layerGroup().addTo(map);
+
+  function magColor(mag) {
+    if (mag >= 6) return '#ef4444';
+    if (mag >= 4.5) return '#f97316';
+    if (mag >= 3) return '#f59e0b';
+    return '#3b82f6';
+  }
+
+  // USGS earthquakes (past 24h, M2.5+)
+  async function loadQuakes() {
+    try {
+      const res = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson');
+      const data = await res.json();
+      quakeLayer.clearLayers();
+      let count = 0, maxMag = 0;
+      data.features.forEach(f => {
+        const [lng, lat, depth] = f.geometry.coordinates;
+        const mag = f.properties.mag || 0;
+        const radius = Math.max(5, Math.min(18, mag * 2.5));
+        const color = magColor(mag);
+        L.circleMarker([lat, lng], {
+          radius, color, fillColor: color, fillOpacity: 0.5, weight: 1.5,
+        }).bindPopup(
+          `<div dir="rtl" style="font-family:Tajawal,sans-serif;min-width:160px">
+            <div style="font-weight:900;font-size:14px;color:${color}">زلزال M${mag.toFixed(1)}</div>
+            <div style="font-size:12px;margin-top:4px;color:#334155">${f.properties.place || '—'}</div>
+            <div style="font-size:11px;margin-top:4px;color:#64748b">العمق: ${depth.toFixed(0)} كم · ${new Date(f.properties.time).toLocaleString('ar-EG')}</div>
+          </div>`
+        ).addTo(quakeLayer);
+        count++;
+        if (mag > maxMag) maxMag = mag;
+      });
+      setText('eq-count', count);
+      setText('ov-eq', count);
+      setText('ov-max', 'M' + maxMag.toFixed(1));
+      setText('bar-eq', count);
+    } catch (e) { console.error('quakes error', e); }
+  }
+
+  // NASA EONET events (wildfires, storms, volcanoes, floods)
+  async function loadEvents() {
+    try {
+      const res = await fetch('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=100');
+      const data = await res.json();
+      eventLayer.clearLayers();
+      const catColors = {
+        wildfires: '#f97316', severeStorms: '#f59e0b', volcanoes: '#ef4444',
+        floods: '#3b82f6', drought: '#a16207', temperatureExtremes: '#dc2626',
+        snow: '#38bdf8', dustHaze: '#a78bfa', manmade: '#64748b',
+      };
+      let fireC = 0, stormC = 0, volcC = 0, otherC = 0, total = 0;
+      data.events.forEach(ev => {
+        if (!ev.geometry || !ev.geometry.length) return;
+        const geo = ev.geometry[ev.geometry.length - 1];
+        const [lng, lat] = geo.coordinates;
+        const catId = ev.categories && ev.categories.length ? ev.categories[0].id : 'other';
+        const color = catColors[catId] || '#8b5cf6';
+        if (catId === 'wildfires') fireC++;
+        else if (catId === 'severeStorms' || catId === 'floods') stormC++;
+        else if (catId === 'volcanoes') volcC++;
+        else otherC++;
+        total++;
+        L.marker([lat, lng], {
+          icon: L.divIcon({
+            className: '',
+            html: `<span style="display:block;width:12px;height:12px;border-radius:50%;background:${color};box-shadow:0 0 8px 2px ${color}66;border:2px solid #fff2"></span>`,
+            iconSize: [12, 12], iconAnchor: [6, 6],
+          }),
+        }).bindPopup(
+          `<div dir="rtl" style="font-family:Tajawal,sans-serif;min-width:160px">
+            <div style="font-weight:900;font-size:13px;color:${color}">${ev.categories && ev.categories.length ? ev.categories[0].title : 'حدث'}</div>
+            <div style="font-size:12px;margin-top:4px;color:#334155">${ev.title}</div>
+            <div style="font-size:11px;margin-top:4px;color:#64748b">${geo.date ? new Date(geo.date).toLocaleDateString('ar-EG') : ''}</div>
+          </div>`
+        ).addTo(eventLayer);
+      });
+      setText('fire-count', fireC);
+      setText('volcano-count', volcC);
+      setText('storm-count', stormC);
+      setText('other-count', otherC);
+      setText('ov-fire', fireC);
+      setText('ov-storm', stormC);
+      setText('bar-fire', fireC);
+      setText('bar-events', total);
+    } catch (e) { console.error('events error', e); }
+  }
+
+  function setText(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
+  // filter buttons
+  document.querySelectorAll('.map-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.map-chip').forEach(b => b.classList.remove('bg-blue-600', 'text-white', 'font-bold'));
+      btn.classList.add('bg-blue-600', 'text-white', 'font-bold');
+      const f = btn.dataset.layer;
+      if (f === 'all') { map.addLayer(quakeLayer); map.addLayer(eventLayer); }
+      else if (f === 'quakes') { map.addLayer(quakeLayer); map.removeLayer(eventLayer); }
+      else if (f === 'events') { map.removeLayer(quakeLayer); map.addLayer(eventLayer); }
+    });
+  });
+
+  // initial load + refresh every 5 min
+  function refreshAll() {
+    loadQuakes();
+    loadEvents();
+    setText('last-update', 'آخر تحديث: ' + new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }));
+  }
+
+  refreshAll();
+  setInterval(refreshAll, 300000);
+
+  // hide loading overlay after a short delay
+  setTimeout(() => {
+    const overlay = document.getElementById('map-loading');
+    if (overlay) { overlay.style.opacity = '0'; setTimeout(() => overlay.style.display = 'none', 500); }
+  }, 1200);
+
+  // fix map sizing on resize
+  window.addEventListener('resize', () => map.invalidateSize());
+})();
+</script>
+</body>
+</html>
